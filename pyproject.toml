@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cyberft"
+version = "0.4.0"
+description = "QLoRA fine-tuning of Falcon-H1-3B-Instruct on red-team / cyber-security data"
+readme = "README.md"
+requires-python = ">=3.11"
+# Nothing is importable-time mandatory, so `pip install cyberft` stays light; the
+# training runtime lives in the `train` extra:  pip install -e ".[train]"
+dependencies = []
+
+[project.optional-dependencies]
+train = [
+  "torch==2.11.0",
+  "transformers==5.20.2",
+  "peft==0.21.2",
+  "bitsandbytes==0.50.2",
+  "datasets==5.1.0",
+  "accelerate>=1.10,<2",
+  "huggingface-hub>=1.31,<3",   # required by transformers 5.20 and datasets 5.1
+  "safetensors>=0.8",
+  "PyYAML>=6.0",
+  "tqdm>=4.66",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src"]
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+no_implicit_optional = true

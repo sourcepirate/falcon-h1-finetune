@@ -1,0 +1,6 @@
+# Tooling only. Linting and the CPU tests must work without a GPU, so this file does
+# not pull torch/transformers. Install the runtime with `pip install -r requirements.txt`.
+pytest>=8.0
+ruff>=0.6
+mypy>=1.11
+types-PyYAML

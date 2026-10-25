@@ -1,0 +1,80 @@
+# Falcon-H1-3B-Instruct QLoRA on 7 public red-team / cyber-security datasets.
+# Requires an Ampere+ GPU (SM >= 8.0) for the bf16 + fused-Mamba fast path.
+
+model:
+  id: tiiuae/Falcon-H1-3B-Instruct
+  # auto: bf16 on SM>=8, fp16 otherwise (fp16 is slower and less stable for a
+  # hybrid Mamba model - keep auto unless you know why you are overriding it).
+  dtype: auto
+  attn: sdpa          # sdpa | flash_attention_2 (requires flash-attn)
+  # Mamba's out_proj feeds a fused kernel that cannot consume a quantized weight.
+  # This is a hard requirement from TII, not an optimisation.
+  bnb_skip_modules: ["out_proj"]
+
+data:
+  output_dir: data/processed
+  max_len: 2048        # training examples longer than this are dropped, not truncated
+  eval_max_len: 1024   # eval rows come only from this band
+  eval_size: 300
+  seed: 42
+  # Where each dataset comes from. `name` selects the row normaliser in
+  # src/cyberft/data.py; `revision` pins a branch, tag or commit.
+  sources:
+    - name: redteam
+      repo: WNT3D/Ultimate-Offensive-Red-Team
+      parquet: default/train/0000.parquet
+      revision: refs/convert/parquet
+      cap: 20000
+    - name: kali
+      repo: suryanshp1/kali-linux-pentesting-data
+      cap: 343
+    - name: kimi
+      repo: echel0nn1881/kimi-cyber-reasoning
+      cap: 997
+    - name: cti
+      repo: reloading0101/threat-intelligence-dataset
+      subset: default
+      splits: [train, validation]
+      cap: 6000
+    - name: exploitdb
+      repo: Waiper/ExploitDB_DataSet
+      parquet: datasets/exploitdb_dataset.parquet
+      cap: 8000
+    - name: linuxcmd
+      repo: Romit2004/LinuxCommands
+      cap: 6000
+    - name: debian
+      repo: 2etatg/Debian_Hacking_Networking
+      cap: 965
+
+lora:
+  r: 32
+  alpha: 16
+  dropout: 0.05
+  # Never out_proj / conv1d: those bypass the LoRA forward and feed a fused kernel.
+  target_modules: [q_proj, k_proj, v_proj, o_proj, in_proj, gate_proj, up_proj, down_proj]
+
+train:
+  output_dir: outputs/falcon-h1-3b-cyber
+  micro_batch: 1
+  grad_accum: 8
+  epochs: 1
+  lr: 2.0e-4
+  warmup_ratio: 0.03
+  max_grad_norm: 1.0
+  optim: paged_adamw_8bit
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 500
+  eval_steps: 500
+  save_total_limit: 2
+  report_to: []        # e.g. ["tensorboard"]
+  num_workers: 2
+  seed: 42
+  resume: true         # resume from the newest checkpoint if one exists
+
+export:
+  merged_dir: outputs/falcon-h1-3b-merged
+  gguf_dir: outputs/gguf
+  quant: Q4_K_M
+  llama_cpp_dir: vendor/llama.cpp

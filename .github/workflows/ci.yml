@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e . --no-deps && pip install -r requirements-dev.txt PyYAML 'datasets>=3'
+      - name: lint
+        run: ruff check .
+      - name: tests (GPU tests skip themselves)
+        run: pytest
+
+  types:
+    # mypy is only meaningful with the real stubs installed; --no-deps turns
+    # transformers/peft/torch into Any and hides genuine type errors.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[train]" mypy types-PyYAML
+      - run: mypy
+
+  resolvable:
+    # Catches contradictory version ranges, which an import-coverage test cannot see.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install --dry-run ".[train]"

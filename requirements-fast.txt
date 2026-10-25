@@ -1,0 +1,14 @@
+# Falcon-H1 fused Mamba path. Requires an Ampere+ GPU (SM >= 8.0): A100, L4, RTX 30xx/40xx.
+# These compile CUDA extensions against whatever torch is installed, so install
+# them separately:
+#
+#   pip install -r requirements-fast.txt --no-build-isolation
+#
+# If the build fails (common on a fresh Colab image with a newer CUDA than the
+# released wheels), skip it: transformers falls back to a PyTorch Mamba loop, which
+# is slower but numerically identical. Measured without them on a T4: 1.68 s/sample.
+mamba-ssm==2.3.2.post1
+causal-conv1d==1.7.0
+
+# Optional. The model falls back to sdpa when flash-attn is absent.
+# flash-attn==2.8.3
