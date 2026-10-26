@@ -39,7 +39,7 @@ class FiniteLossCallback(TrainerCallback):
                 raise NonFiniteLossError(
                     f"non-finite {key}={value} at step {state.global_step}; "
                     "stopping instead of saving a poisoned adapter. "
-                    "Lower train.lr, shorten data.max_len, or move to bf16 on Ampere."
+                    "Lower train.lr or shorten data.max_len."
                 )
 
 

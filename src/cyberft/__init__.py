@@ -35,8 +35,6 @@ _LAZY = {
     "with_export": "config",
     "amp_dtype": "model",
     "build_tokenizer": "model",
-    "probe_trainable_dtypes": "model",
-    "assert_trainable_dtypes": "model",
     "prepare_data": "loaders",
     "data_manifest": "loaders",
     "train": "train",
