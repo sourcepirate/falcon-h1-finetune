@@ -13,12 +13,13 @@ Written after a notebook-based attempt kept failing on dtype plumbing. The rules
 
 ## Hardware
 
-Requires an **Ampere or newer GPU** (A100, L4, RTX 30xx/40xx, H100). Reasons, not snobbery:
+Works on a **Colab T4** (fp16) and is faster on **Ampere or newer** (A100, L4,
+RTX 30xx/40xx, H100) with bf16 and fused Mamba kernels:
 
 | Requirement | Why |
 |---|---|
-| SM ≥ 8.0 | `mamba-ssm` has no Turing kernels, so Falcon-H1 runs a PyTorch Mamba loop on a T4: **~1.68 s/sample**, ≈10.5 h for 22k rows. |
-| bf16 | Falcon-H1 is a hybrid Transformer/SSM. fp16 needs a GradScaler, whose fused kernel has no bf16 path, and SSM arithmetic overflows fp16 on long sequences. |
+| SM ≥ 8.0 (recommended) | `mamba-ssm` has no Turing kernels, so Falcon-H1 runs a PyTorch Mamba loop on a T4: **~1.68 s/sample**, ≈10.5 h for 22k rows. |
+| bf16 on Ampere+ | `dtype: auto` selects bf16 where it is real; a T4 runs fp16 end-to-end instead. |
 
 ## Quickstart
 
@@ -81,8 +82,8 @@ path = export_gguf(cfg, adapter=adapter)       # Path to the quantized GGUF
 back to each module.
 
 The library never parses arguments, configures logging, or calls `sys.exit`. Failures are
-typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`, `NonFiniteLossError`) so a notebook can catch them and a scheduler can map them to exit
-codes.
+typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`, `NonFiniteLossError`)
+so a notebook can catch them and a scheduler can map them to exit codes.
 
 ## CLI
 
@@ -97,21 +98,21 @@ python -m cyberft.cli export
 No command requires a flag: `--config` defaults to `configs/qlora-3b.yaml`.
 Step caps (`train.max_steps`), adapter paths and generation prompts live in the
 YAML config and the library (`with_train`, `generate`), not in CLI flags.
-```
+
 ## Layout
 
 ```
 configs/qlora-3b.yaml        all hyperparameters, validated on load
 notebooks/run.ipynb          thin driver over the library (no logic duplicated)
 src/cyberft/errors.py        typed exceptions, no SystemExit in library code
-src/cyberft/cli.py           argparse -> library -> exit codes, lazy imports
+src/cyberft/cli.py           argparse -> library -> exit codes, top-level imports
 src/cyberft/config.py        typed config, rejects unknown keys
-src/cyberft/data.py          7 sources -> chat template -> Arrow + manifest
+src/cyberft/loaders.py       LoaderBase + one class per dataset -> chat template -> Arrow + manifest
 src/cyberft/model.py         4-bit load, LoRA, one dtype decision
 src/cyberft/train.py         plain transformers Trainer, --smoke / resume
 src/cyberft/evaluate.py      EvalReport, per-row loss
 src/cyberft/export.py        merge -> GGUF with existence asserts
-tests/                       config, normalisers, cache, packaging
+tests/                       config, loaders, cache, packaging
 ```
 
 ## Non-obvious decisions
@@ -126,11 +127,11 @@ and depthwise `conv1d` has no channel mixing to adapt. `config.validate()` rejec
 **`in_proj` is targeted** — it is an ordinary projection in the Mamba mixer and is included
 in the config Axolotl ships for this model.
 
-**Dtype contract** (`model.assert_trainable_dtypes`) — torch ≥ 2.11 tracks a per-tensor
-`grad_dtype`. PEFT's fp16/bf16→fp32 upcast changes `dtype` without updating `grad_dtype`,
-so gradients arrive in a dtype the GradScaler and bitsandbytes' optimizer reject. Instead of
-patching tensors mid-run, the loader refuses to start unless every trainable tensor and its
-`grad_dtype` equal the training dtype.
+**Single precision end-to-end** — the base model is loaded in one dtype (fp16 by
+default, bf16 on Ampere+ via `dtype: auto`) and `TrainingArguments` runs with
+`bf16=False, fp16=False`. There is no AMP, no GradScaler and no autocast in the
+train or eval paths; `amp_dtype()` only selects the 4-bit compute dtype for the
+base-model load.
 
 **Evaluation never masks failure** — `cyberft.evaluate` computes one loss per row and exits
 non-zero if any is non-finite, printing the offending row's length and text. A mean of
@@ -165,10 +166,10 @@ branch, tag or commit.
 
 | Symptom | Cause | Action |
 |---|---|---|
-| `mat1 and mat2 shapes cannot be multiplied` in `mamba_split_conv1d_scan_combined` | same as above, seen through the fused kernel | same fix |
-| `NonFiniteLossError` during training | loss went NaN at that step | stop; lower `lr`, check `max_len`, or move to bf16 on Ampere |
-| `NonFiniteLossError` during evaluation | one pathological row | `make eval` names the row; drop it in `cyberft/data.py` |
-| `NotImplementedError: _amp_foreach_non_finite_check_and_unscale_cuda ... BFloat16` | fp16 AMP with bf16 gradients | you are on a pre-Ampere GPU; move to Ampere or accept fp16 end-to-end |
+| `mat1 and mat2 shapes cannot be multiplied` in `mamba_split_conv1d_scan_combined` | Mamba `out_proj` was quantised and fed to the fused kernel | keep `out_proj` in `model.bnb_skip_modules` (TII fine-tuning guide) |
+| `NonFiniteLossError` during training | loss went NaN at that step | stop; lower `lr`, check `max_len` |
+| `NonFiniteLossError` during evaluation | one pathological row | `make eval` names the row; drop it in the loader class in `cyberft/loaders.py` |
+| `NonFiniteLossError` on a T4 (fp16) | fp16 SSM arithmetic on a long row | lower `max_len` (try 768), then `lr` to 1e-4 |
 | `No kernel image is available` from `mamba-ssm` | wrong CUDA arch | reinstall `requirements-fast.txt` on the target GPU |
 | `ImportError: ... requires bitsandbytes` | runtime installed without the `train` extra | `pip install -e ".[train]"`, restart the kernel |
 
