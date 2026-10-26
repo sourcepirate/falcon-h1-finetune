@@ -59,6 +59,7 @@ addopts = "-q"
 line-length = 110
 target-version = "py311"
 src = ["src", "tests"]
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
