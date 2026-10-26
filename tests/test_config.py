@@ -9,10 +9,12 @@ from cyberft.config import (
     ModelConfig,
     SourceConfig,
     load_config,
+    with_train,
 )
 
 REPO = Path(__file__).resolve().parents[1]
 CONFIG = REPO / "configs" / "qlora-3b.yaml"
+T4_CONFIG = REPO / "configs" / "qlora-3b-t4.yaml"
 
 MINIMAL = """
 model:
@@ -125,3 +127,30 @@ def test_parquet_and_subset_are_exclusive():
     source = SourceConfig(name="kali", repo="org/a", parquet="p.parquet", subset="default")
     with pytest.raises(ConfigError, match="mutually exclusive"):
         _cfg_with(source).validate()
+
+
+def test_t4_config_is_valid_and_smaller():
+    full = load_config(CONFIG)
+    t4 = load_config(T4_CONFIG)
+    names = [source.name for source in t4.data.sources]
+    assert names == [source.name for source in full.data.sources]
+    assert len(names) == 7
+    assert t4.data.max_len <= 1024
+    assert t4.data.eval_max_len <= t4.data.max_len
+    assert t4.train.save_steps <= 100
+
+
+def test_max_steps_validation():
+    cfg = load_config(CONFIG)
+    with pytest.raises(ConfigError, match="max_steps"):
+        with_train(cfg, max_steps=0)
+    assert with_train(cfg, max_steps=100).train.max_steps == 100
+    assert with_train(cfg, max_steps=-1).train.max_steps == -1
+
+
+def test_with_train_overrides_output_dir(tmp_path):
+    cfg = load_config(CONFIG)
+    updated = with_train(cfg, output_dir=tmp_path / "probe", max_steps=100, resume=False)
+    assert updated.train.output_dir == tmp_path / "probe"
+    assert updated.train.max_steps == 100
+    assert updated.train.resume is False

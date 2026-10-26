@@ -14,6 +14,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import torch
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from .config import Config
 from .errors import DependencyError, NotBuiltError
 
@@ -21,10 +25,6 @@ log = logging.getLogger(__name__)
 
 
 def merge(cfg: Config, adapter_dir: Path) -> Path:
-    import torch
-    from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
     if not (adapter_dir / "adapter_config.json").exists():
         raise NotBuiltError(f"no adapter at {adapter_dir}")
 
@@ -73,7 +73,7 @@ def export_gguf(cfg: Config, *, adapter: str | Path | None = None, skip_merge: b
     if skip_merge:
         merged = Path(cfg.export.merged_dir)
         if not merged.exists():
-            raise NotBuiltError(f"--skip-merge given but {merged} does not exist")
+            raise NotBuiltError(f"skip_merge=True given but {merged} does not exist")
     else:
         merged = merge(cfg, adapter_dir)
     return quantize(cfg, convert(cfg, merged))

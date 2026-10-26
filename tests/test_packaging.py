@@ -1,4 +1,4 @@
-"""Every third-party import must be declared in the `train` extra.
+"""Every third-party import must be declared in the `train`/`colab` extras.
 
 This is the check that would have caught `pip install -e .` producing a package that
 imported fine but could not train (bitsandbytes missing).
@@ -26,7 +26,9 @@ def _distribution(spec: str) -> str:
 
 def declared() -> set[str]:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
-    return {_distribution(spec) for spec in project["project"]["optional-dependencies"]["train"]}
+    extras = project["project"]["optional-dependencies"]
+    # `train` is the full runtime; `colab` is train-minus-torch for Colab T4.
+    return {_distribution(spec) for extra in ("train", "colab") for spec in extras[extra]}
 
 
 def third_party_imports() -> set[str]:
@@ -49,3 +51,11 @@ def test_all_runtime_imports_are_declared():
 
 def test_train_extra_is_not_empty():
     assert len(declared()) >= 8
+
+
+def test_colab_extra_is_train_minus_torch():
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    extras = project["project"]["optional-dependencies"]
+    train = {_distribution(spec) for spec in extras["train"]}
+    colab = {_distribution(spec) for spec in extras["colab"]}
+    assert colab == train - {"torch"}, f"colab extra drifted: {sorted(train ^ (colab | {'torch'}))}"

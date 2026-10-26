@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("datasets")
+pytest.importorskip("torch")  # loaders imports model.py, which needs the training stack
 
 from cyberft.config import load_config
-from cyberft.data import fingerprint, prepare_data
 from cyberft.errors import NotBuiltError
+from cyberft.loaders import fingerprint, prepare_data
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -60,7 +61,7 @@ def test_manifest_wiring(tmp_path, monkeypatch):
     """Regression: fingerprint() is keyword-only; manifest() must call it that way."""
     from datasets import Dataset, DatasetDict
 
-    import cyberft.data as data
+    import cyberft.loaders as data
 
     monkeypatch.setattr(data, "_resolved_revisions", lambda cfg: {})
     splits = DatasetDict({
@@ -79,7 +80,7 @@ def test_manifest_wiring(tmp_path, monkeypatch):
 def test_content_hash_distinguishes_equal_length_corpora():
     from datasets import Dataset, DatasetDict
 
-    from cyberft.data import content_hash
+    from cyberft.loaders import content_hash
 
     def splits(ids):
         return DatasetDict({"train": Dataset.from_dict({"input_ids": ids}),

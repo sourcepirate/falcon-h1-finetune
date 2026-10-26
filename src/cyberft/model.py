@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 import torch
 from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
@@ -22,6 +23,7 @@ from transformers import (
 )
 
 from .config import Config
+from .errors import DependencyError
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +36,45 @@ def amp_dtype(cfg: Config) -> torch.dtype:
     if cfg.model.dtype == "fp16":
         return torch.float16
     return torch.bfloat16 if torch.cuda.is_bf16_supported(including_emulation=False) else torch.float16
+
+
+def probe_trainable_dtypes(model: torch.nn.Module, dtype: torch.dtype) -> dict[str, Any]:
+    """Inspect trainable tensors without raising. Returns a summary dict.
+
+    torch >= 2.11 tracks a per-tensor ``grad_dtype``. PEFT's fp16/bf16->fp32
+    upcast changes ``dtype`` without updating ``grad_dtype``, so gradients can
+    arrive in a dtype the GradScaler and bitsandbytes' optimizer reject.
+    This reports the state so a notebook can print it instead of guessing.
+    """
+    trainable = [(name, p) for name, p in model.named_parameters() if p.requires_grad]
+    mismatched = [
+        name for name, p in trainable
+        if p.dtype != dtype or getattr(p, "grad_dtype", p.dtype) != dtype
+    ]
+    return {
+        "expected": str(dtype),
+        "trainable_count": len(trainable),
+        "trainable_params": sum(p.numel() for _, p in trainable),
+        "mismatched_count": len(mismatched),
+        "mismatched": mismatched[:20],
+    }
+
+
+def assert_trainable_dtypes(model: torch.nn.Module, dtype: torch.dtype) -> None:
+    """Refuse to train when a trainable tensor (or its ``grad_dtype``) is off-dtype.
+
+    Raises :class:`DependencyError` listing the offending parameter names.
+    Callers that only want the measurement should use
+    :func:`probe_trainable_dtypes`.
+    """
+    report = probe_trainable_dtypes(model, dtype)
+    if report["mismatched_count"]:
+        raise DependencyError(
+            f"{report['mismatched_count']} trainable tensor(s) are not {report['expected']}: "
+            f"{report['mismatched']}. This is the PEFT fp16/bf16->fp32 upcast vs "
+            "torch>=2.11 grad_dtype mismatch; refusing to start instead of "
+            "diverging mid-run."
+        )
 
 
 def build_tokenizer(cfg: Config) -> PreTrainedTokenizerBase:
@@ -83,6 +124,12 @@ def build_model(cfg: Config) -> PeftModel:
     )
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     log.info("trainable parameters: %s", f"{trainable:,}")
+    report = probe_trainable_dtypes(model, amp_dtype(cfg))
+    log.info(
+        "dtype contract: expected=%s trainable=%d mismatched=%d",
+        report["expected"], report["trainable_count"], report["mismatched_count"],
+    )
+    assert_trainable_dtypes(model, amp_dtype(cfg))
     return model
 
 

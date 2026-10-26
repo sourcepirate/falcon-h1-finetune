@@ -15,9 +15,9 @@ import torch
 from transformers import DataCollatorForLanguageModeling
 
 from .config import Config
-from .data import prepare_data
 from .errors import NonFiniteLossError, NotBuiltError
-from .model import amp_dtype, attach_adapter, build_tokenizer
+from .loaders import prepare_data
+from .model import attach_adapter, build_tokenizer
 from .train import train_dir
 
 
@@ -85,12 +85,13 @@ def _load_for_inference(cfg: Config, adapter: str | Path | None, smoke: bool):
     if not (adapter_dir / "adapter_config.json").exists():
         raise NotBuiltError(f"no adapter at {adapter_dir} - train first")
     model = attach_adapter(cfg, adapter_dir)
-    return model, tokenizer, next(model.parameters()).device, amp_dtype(cfg)
+    return model, tokenizer, next(model.parameters()).device
 
 
 def evaluate(cfg: Config, *, adapter: str | Path | None = None, split: str = "eval",
              smoke: bool = False) -> EvalReport:
-    model, tokenizer, device, dtype = _load_for_inference(cfg, adapter, smoke)
+    # Single precision, no autocast: matches the no-AMP training path.
+    model, tokenizer, device = _load_for_inference(cfg, adapter, smoke)
     dataset = prepare_data(cfg, smoke=smoke)[split]
     collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
@@ -100,8 +101,7 @@ def evaluate(cfg: Config, *, adapter: str | Path | None = None, split: str = "ev
             row = dataset[index]
             features = {k: v for k, v in row.items() if k != "text"}
             batch = {k: v.to(device) for k, v in collator([features]).items()}
-            with torch.autocast("cuda", dtype=dtype):
-                loss = model(**batch).loss.item()
+            loss = model(**batch).loss.item()
             report.rows.append(
                 RowLoss(index, len(row["input_ids"]), loss, row.get("text", "")[:200])
             )
@@ -110,14 +110,14 @@ def evaluate(cfg: Config, *, adapter: str | Path | None = None, split: str = "ev
 
 def generate(cfg: Config, prompts: list[str], *, adapter: str | Path | None = None,
              smoke: bool = False, max_new_tokens: int = 256) -> list[str]:
-    model, tokenizer, device, dtype = _load_for_inference(cfg, adapter, smoke)
+    model, tokenizer, device = _load_for_inference(cfg, adapter, smoke)
     answers: list[str] = []
     for prompt in prompts:
         inputs = tokenizer.apply_chat_template(
             [{"role": "user", "content": prompt}],
             add_generation_prompt=True, return_tensors="pt", return_dict=True,
         ).to(device)
-        with torch.no_grad(), torch.autocast("cuda", dtype=dtype):
+        with torch.no_grad():
             output = model.generate(
                 **inputs, max_new_tokens=max_new_tokens, do_sample=False,
                 pad_token_id=tokenizer.pad_token_id,

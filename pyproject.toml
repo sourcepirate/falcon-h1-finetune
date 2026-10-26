@@ -25,9 +25,30 @@ train = [
   "PyYAML>=6.0",
   "tqdm>=4.66",
 ]
+# Colab T4: same as `train` minus torch, so pip cannot replace Colab's working
+# CUDA build. Pin the pre-installed torch first:
+#   python -c "import torch; print(f'torch=={torch.__version__}')" > /tmp/colab-constraints.txt
+#   pip install -e ".[colab]" -c /tmp/colab-constraints.txt
+colab = [
+  "transformers==5.20.2",
+  "peft==0.21.2",
+  "bitsandbytes==0.50.2",
+  "datasets==5.1.0",
+  "accelerate>=1.10,<2",
+  "huggingface-hub>=1.31,<3",
+  "safetensors>=0.8",
+  "PyYAML>=6.0",
+  "tqdm>=4.66",
+]
+
+[project.scripts]
+cyberft = "cyberft.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+cyberft = ["py.typed"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -41,6 +62,9 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
+# Only a bare `_` is a throwaway: the default pattern exempts every `_private`
+# name from F811, so a duplicated module-level helper would pass the gate.
+dummy-variable-rgx = "^_$"
 
 [tool.mypy]
 python_version = "3.11"

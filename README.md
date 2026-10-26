@@ -38,6 +38,24 @@ make export     # merge -> f16 GGUF -> Q4_K_M
 
 `HF_TOKEN` is read from the environment. Never commit it.
 
+## Colab T4
+
+`notebooks/run.ipynb` is the T4 entry point: open it in Colab with a T4 runtime and
+`Run All` with the defaults (`RUN_TRAIN = False`). It probes the GPU, installs with
+the `colab` extra (which keeps Colab's pre-installed torch instead of replacing it),
+selects `configs/qlora-3b-t4.yaml` on pre-Ampere GPUs, and runs smoke → probe → subset
+behind the `SMOKE` / `RUN_TRAIN` / `MAX_STEPS` flags. Do not install
+`requirements-fast.txt` on a T4 (`mamba-ssm` has no Turing kernels); the PyTorch
+Mamba fallback is slower (~1.68 s/sample) but numerically identical. The full ~22k
+corpus is not a free-T4 target — the T4 profile trains a ~5–6k subset with
+`save_steps: 100` + `resume: true`, so a disconnect costs at most 100 steps.
+
+```bash
+# equivalent CLI path (outside Colab)
+CONFIG=configs/qlora-3b-t4.yaml make smoke-t4
+CONFIG=configs/qlora-3b-t4.yaml make train-t4   # subset; set train.max_steps in YAML for a probe
+```
+
 ## Use as a library
 
 Every stage is a function; the CLI and the notebook are thin wrappers over these.
@@ -72,10 +90,14 @@ codes.
 python -m cyberft.cli info      # gpu, dtype, resolved config, corpus stats
 python -m cyberft.cli data      # --smoke, --force
 python -m cyberft.cli train     # --smoke
-python -m cyberft.cli eval      # --split, --prompt "..." (generate instead)
-python -m cyberft.cli export    # --skip-merge
+python -m cyberft.cli eval      # --smoke
+python -m cyberft.cli export
 ```
 
+No command requires a flag: `--config` defaults to `configs/qlora-3b.yaml`.
+Step caps (`train.max_steps`), adapter paths and generation prompts live in the
+YAML config and the library (`with_train`, `generate`), not in CLI flags.
+```
 ## Layout
 
 ```

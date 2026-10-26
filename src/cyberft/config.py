@@ -20,9 +20,9 @@ FORBIDDEN_LORA_TARGETS = {"out_proj", "conv1d"}
 
 @dataclass(frozen=True)
 class SourceConfig:
-    """Where one dataset comes from. How a row becomes messages stays in data.py."""
+    """Where one dataset comes from. How a row becomes messages lives in the loader class in loaders.py."""
 
-    name: str                        # must match a normaliser in data.BUILDERS
+    name: str                        # must match a loader in loaders.LOADERS
     repo: str
     splits: tuple[str, ...] = ("train",)
     subset: str | None = None        # load_dataset(name=...)
@@ -66,6 +66,7 @@ class TrainConfig:
     micro_batch: int = 1
     grad_accum: int = 8
     epochs: float = 1
+    max_steps: int = -1  # -1 = full epochs; >0 caps steps (stability probes)
     lr: float = 2e-4
     warmup_ratio: float = 0.03
     max_grad_norm: float = 1.0
@@ -128,6 +129,8 @@ class Config:
 
         if self.train.lr <= 0 or self.train.epochs <= 0:
             raise ConfigError("train.lr and train.epochs must be positive")
+        if self.train.max_steps < -1 or self.train.max_steps == 0:
+            raise ConfigError("train.max_steps must be -1 or positive")
         if self.train.micro_batch <= 0 or self.train.grad_accum <= 0:
             raise ConfigError("train.micro_batch and train.grad_accum must be positive")
         if not 0 <= self.train.warmup_ratio < 1:
@@ -211,3 +214,24 @@ def warmup_steps(cfg: Config, train_rows: int) -> int:
     per_epoch = max(1, train_rows // (cfg.train.micro_batch * cfg.train.grad_accum))
     total = max(1, int(per_epoch * cfg.train.epochs))
     return max(1, int(total * cfg.train.warmup_ratio))
+
+
+def with_train(cfg: Config, **changes: Any) -> Config:
+    """Return a validated copy of ``cfg`` with ``TrainConfig`` fields replaced.
+
+    Notebook ergonomic so ``run.ipynb`` can override output dirs, ``max_steps``
+    or ``resume`` without editing YAML:
+
+        cfg = with_train(cfg, output_dir=OUT / "probe", max_steps=100, resume=False)
+    """
+    return dataclasses.replace(cfg, train=dataclasses.replace(cfg.train, **changes)).validate()
+
+
+def with_data(cfg: Config, **changes: Any) -> Config:
+    """Return a validated copy of ``cfg`` with ``DataConfig`` fields replaced."""
+    return dataclasses.replace(cfg, data=dataclasses.replace(cfg.data, **changes)).validate()
+
+
+def with_export(cfg: Config, **changes: Any) -> Config:
+    """Return a validated copy of ``cfg`` with ``ExportConfig`` fields replaced."""
+    return dataclasses.replace(cfg, export=dataclasses.replace(cfg.export, **changes)).validate()

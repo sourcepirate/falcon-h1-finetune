@@ -1,0 +1,81 @@
+# Falcon-H1-3B-Instruct QLoRA, tuned for a Colab T4 (SM 7.5, 16 GB, fp16).
+# Same seven sources as qlora-3b.yaml; only caps and lengths change.
+# notebooks/run.ipynb selects this file automatically on pre-Ampere GPUs.
+
+model:
+  id: tiiuae/Falcon-H1-3B-Instruct
+  # auto resolves to fp16 on a T4, bf16 on Ampere+. Do not force bf16 on a T4:
+  # it is emulated and hits the pre-Ampere failure in the README table.
+  dtype: auto
+  attn: sdpa          # sdpa | flash_attention_2 (requires flash-attn)
+  # Mamba's out_proj feeds a fused kernel that cannot consume a quantized weight.
+  # This is a hard requirement from TII, not an optimisation.
+  bnb_skip_modules: ["out_proj"]
+
+data:
+  output_dir: data/processed
+  max_len: 1024       # was 2048; fp16 SSM arithmetic is stabler on shorter rows
+  eval_max_len: 512   # eval rows come only from this band
+  eval_size: 128
+  seed: 42
+  # All seven names must stay: build_messages() enforces the exact set.
+  sources:
+    - name: redteam
+      repo: WNT3D/Ultimate-Offensive-Red-Team
+      parquet: default/train/0000.parquet
+      revision: refs/convert/parquet
+      cap: 2500
+    - name: kali
+      repo: suryanshp1/kali-linux-pentesting-data
+      cap: 343
+    - name: kimi
+      repo: echel0nn1881/kimi-cyber-reasoning
+      cap: 997
+    - name: cti
+      repo: reloading0101/threat-intelligence-dataset
+      subset: default
+      splits: [train, validation]
+      cap: 1200
+    - name: exploitdb
+      repo: Waiper/ExploitDB_DataSet
+      parquet: datasets/exploitdb_dataset.parquet
+      cap: 1000
+    - name: linuxcmd
+      repo: Romit2004/LinuxCommands
+      cap: 700
+    - name: debian
+      repo: 2etatg/Debian_Hacking_Networking
+      cap: 965
+
+lora:
+  r: 32
+  alpha: 16
+  dropout: 0.05
+  # Never out_proj / conv1d: those bypass the LoRA forward and feed a fused kernel.
+  target_modules: [q_proj, k_proj, v_proj, o_proj, in_proj, gate_proj, up_proj, down_proj]
+
+train:
+  output_dir: outputs/falcon-h1-3b-cyber-t4
+  micro_batch: 1
+  grad_accum: 8
+  epochs: 1
+  max_steps: -1      # -1 = full epochs; set >0 in YAML for probes
+  lr: 2.0e-4         # fallback 1.0e-4 if the 100-step probe NaNs
+  warmup_ratio: 0.03
+  max_grad_norm: 1.0
+  optim: paged_adamw_8bit
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 100     # frequent enough that a disconnect costs <= 100 steps
+  eval_steps: 200
+  save_total_limit: 2
+  report_to: []        # e.g. ["tensorboard"]
+  num_workers: 2       # 0 if the Colab DataLoader hangs
+  seed: 42
+  resume: true         # resume from the newest checkpoint if one exists
+
+export:
+  merged_dir: outputs/falcon-h1-3b-merged-t4
+  gguf_dir: outputs/gguf-t4
+  quant: Q4_K_M
+  llama_cpp_dir: vendor/llama.cpp

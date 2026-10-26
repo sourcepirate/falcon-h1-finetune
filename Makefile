@@ -1,11 +1,16 @@
 PY      ?= python
 CONFIG  ?= configs/qlora-3b.yaml
-ADAPTER ?=
+T4CONFIG ?= configs/qlora-3b-t4.yaml
 
-.PHONY: install install-fast data smoke train eval export info test lint format lock clean
+.PHONY: install install-colab install-fast data smoke smoke-t4 train train-t4 eval export info test lint format lock clean
 
 install:
 	$(PY) -m pip install -e ".[train]"
+
+# Colab T4: keep the pre-installed torch; install everything else.
+install-colab:
+	$(PY) -c "import torch; print(f'torch=={torch.__version__}')" > /tmp/colab-constraints.txt
+	$(PY) -m pip install -e ".[colab]" -c /tmp/colab-constraints.txt
 
 install-fast:
 	$(PY) -m pip install -r requirements-fast.txt --no-build-isolation
@@ -18,14 +23,22 @@ smoke:
 	$(PY) -m cyberft.cli data --config $(CONFIG) --smoke
 	$(PY) -m cyberft.cli train --config $(CONFIG) --smoke
 
+# Same gate on the T4 profile (1024 max_len, reduced caps).
+smoke-t4:
+	$(PY) -m cyberft.cli data --config $(T4CONFIG) --smoke
+	$(PY) -m cyberft.cli train --config $(T4CONFIG) --smoke
+
 train:
 	$(PY) -m cyberft.cli train --config $(CONFIG)
 
+train-t4:
+	$(PY) -m cyberft.cli train --config $(T4CONFIG)
+
 eval:
-	$(PY) -m cyberft.cli eval --config $(CONFIG) $(if $(ADAPTER),--adapter $(ADAPTER))
+	$(PY) -m cyberft.cli eval --config $(CONFIG)
 
 export:
-	$(PY) -m cyberft.cli export --config $(CONFIG) $(if $(ADAPTER),--adapter $(ADAPTER))
+	$(PY) -m cyberft.cli export --config $(CONFIG)
 
 info:
 	$(PY) -m cyberft.cli info --config $(CONFIG)

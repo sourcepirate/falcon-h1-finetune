@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
+from typing import Any
 
-import torch
 from datasets import DatasetDict
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
+from transformers.trainer_callback import TrainerCallback
+from transformers.trainer_utils import get_last_checkpoint
 
 from .config import Config, warmup_steps
-from .data import prepare_data
-from .model import amp_dtype, build_model, build_tokenizer
+from .errors import NonFiniteLossError
+from .loaders import prepare_data
+from .model import build_model, build_tokenizer
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +24,23 @@ log = logging.getLogger(__name__)
 SMOKE_TRAIN_ROWS = 64
 SMOKE_EVAL_ROWS = 8
 SMOKE_STEPS = 5
+
+
+class FiniteLossCallback(TrainerCallback):
+    """Abort training on the first non-finite loss instead of saving a poisoned adapter."""
+
+    def on_log(self, args: Any, state: Any, control: Any,
+               logs: dict[str, float] | None = None, **kwargs: Any) -> None:
+        if not logs:
+            return
+        for key in ("loss", "eval_loss"):
+            value = logs.get(key)
+            if value is not None and not math.isfinite(value):
+                raise NonFiniteLossError(
+                    f"non-finite {key}={value} at step {state.global_step}; "
+                    "stopping instead of saving a poisoned adapter. "
+                    "Lower train.lr, shorten data.max_len, or move to bf16 on Ampere."
+                )
 
 
 def train_dir(cfg: Config, smoke: bool = False) -> Path:
@@ -34,21 +55,28 @@ def load_splits(cfg: Config, smoke: bool) -> DatasetDict:
 
 
 def build_args(cfg: Config, train_rows: int, smoke: bool) -> TrainingArguments:
-    use_bf16 = amp_dtype(cfg) is torch.bfloat16
+    if smoke:
+        max_steps, epochs = SMOKE_STEPS, 1.0
+    elif cfg.train.max_steps > 0:
+        max_steps, epochs = cfg.train.max_steps, cfg.train.epochs
+    else:
+        max_steps, epochs = -1, cfg.train.epochs
     return TrainingArguments(
         output_dir=str(train_dir(cfg, smoke)),
         per_device_train_batch_size=cfg.train.micro_batch,
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=cfg.train.grad_accum,
-        num_train_epochs=1.0 if smoke else cfg.train.epochs,
-        max_steps=SMOKE_STEPS if smoke else -1,
+        num_train_epochs=epochs,
+        max_steps=max_steps,
         learning_rate=cfg.train.lr,
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps(cfg, train_rows),
         max_grad_norm=cfg.train.max_grad_norm,
         optim=cfg.train.optim,
-        bf16=use_bf16,
-        fp16=not use_bf16,
+        # Single precision end-to-end: the model is loaded in one dtype and no
+        # AMP/GradScaler is used (notebook recipe: fp16 load, fp16=False, bf16=False).
+        bf16=False,
+        fp16=False,
         gradient_checkpointing=cfg.train.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         logging_steps=1 if smoke else cfg.train.logging_steps,
@@ -81,12 +109,11 @@ def train(cfg: Config, smoke: bool = False) -> Trainer:
         train_dataset=splits["train"],
         eval_dataset=splits["eval"],
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        callbacks=[FiniteLossCallback()],
     )
 
     resume = None
     if cfg.train.resume and not smoke:
-        from transformers.trainer_utils import get_last_checkpoint
-
         try:
             resume = get_last_checkpoint(args.output_dir)
         except (ValueError, FileNotFoundError):
