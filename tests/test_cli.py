@@ -9,7 +9,7 @@ REPO = Path(__file__).resolve().parents[1]
 def test_cli_surface_is_minimal():
 
     sys.path.insert(0, str(REPO / "src"))
-    from cyberft.cli import build_parser
+    from cyberft.args import build_parser
 
     actions = {}
     for action in build_parser()._actions:
