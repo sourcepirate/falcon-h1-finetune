@@ -36,7 +36,7 @@ class ModelConfig:
     id: str
     dtype: str = "auto"
     attn: str = "sdpa"
-    bnb_skip_modules: tuple[str, ...] = ("out_proj",)
+    bnb_skip_modules: tuple[str, ...] = ("out_proj", "lm_head")
 
 
 @dataclass(frozen=True)
@@ -109,6 +109,12 @@ class Config:
             raise ConfigError(
                 "model.bnb_skip_modules must contain 'out_proj': Mamba's out_proj feeds a fused "
                 "kernel that cannot consume a 4-bit packed weight (TII fine-tuning guide)."
+            )
+        if "lm_head" not in self.model.bnb_skip_modules:
+            raise ConfigError(
+                "model.bnb_skip_modules must contain 'lm_head': Falcon-H1's vocab size (65537) "
+                "is not aligned to bitsandbytes' 4-bit kernel block size, causing a CUDA "
+                "misaligned address error. Keeping lm_head in bf16/fp16 avoids this."
             )
 
         bad = FORBIDDEN_LORA_TARGETS.intersection(self.lora.target_modules)

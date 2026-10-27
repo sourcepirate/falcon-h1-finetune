@@ -47,6 +47,7 @@ def test_repository_config_is_valid():
     assert all(source.repo for source in cfg.data.sources)
     assert all(source.cap for source in cfg.data.sources)
     assert "out_proj" in cfg.model.bnb_skip_modules
+    assert "lm_head" in cfg.model.bnb_skip_modules
     assert "out_proj" not in cfg.lora.target_modules
     assert "conv1d" not in cfg.lora.target_modules
     assert cfg.data.eval_max_len <= cfg.data.max_len
@@ -88,8 +89,17 @@ def test_out_proj_as_lora_target_is_rejected(tmp_path):
 
 
 def test_missing_bnb_skip_modules_is_rejected(tmp_path):
-    path = _variant(tmp_path, 'bnb_skip_modules: ["out_proj"]', "bnb_skip_modules: []")
+    path = _variant(tmp_path, 'bnb_skip_modules: ["out_proj", "lm_head"]', "bnb_skip_modules: []")
     with pytest.raises(ConfigError, match="out_proj"):
+        load_config(path)
+
+
+def test_missing_lm_head_skip_is_rejected(tmp_path):
+    path = _variant(
+        tmp_path, 'bnb_skip_modules: ["out_proj", "lm_head"]',
+        'bnb_skip_modules: ["out_proj"]',
+    )
+    with pytest.raises(ConfigError, match="lm_head"):
         load_config(path)
 
 

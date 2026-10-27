@@ -10,7 +10,7 @@ model:
   attn: sdpa          # sdpa | flash_attention_2 (requires flash-attn)
   # Mamba's out_proj feeds a fused kernel that cannot consume a quantized weight.
   # This is a hard requirement from TII, not an optimisation.
-  bnb_skip_modules: ["out_proj"]
+  bnb_skip_modules: ["out_proj", "lm_head"]
 
 data:
   output_dir: data/processed
