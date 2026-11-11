@@ -126,6 +126,7 @@ def build_model(cfg: Config) -> PeftModel:
 
 def attach_adapter(cfg: Config, adapter_dir: str | os.PathLike) -> PeftModel:
     """Trained adapter on a fresh base (quantized per model.quant), for evaluation and export."""
+    base: PreTrainedModel
     if cfg.model.quant == "none":
         base = AutoModelForCausalLM.from_pretrained(
             cfg.model.id,
