@@ -22,7 +22,7 @@ Terms: QLoRA (frozen 4-bit base plus small trainable side weights); GGUF (loadab
 * Train Tiny on the same 7 datasets with the v1 probe recipe (r=8, alpha=16, dropout=0.05, 4-bit baseline with LoRA-only fallback) that passes `make smoke` on T4 and a full finite-loss run on the RunPod RTX 3090 pod.
 * Ship one `configs/qlora-tiny.yaml` with corrected lengths, caps, paths, and skip/target lists verified against Tiny's real architecture.
 * Ship one CUDA Dockerfile (sm_75 + sm_86) tested on T4 and runnable on a 3090 RunPod pod with pinned torch/CUDA/bitsandbytes and documented build/run commands.
-* Extend `.github/workflows/ci.yml` to build on PRs and push to GHCR on tags only, keeping ruff + mypy + pytest green.
+* Extend `.github/workflows/ci.yml` to build on PRs and push to GHCR on main pushes and version tags, keeping ruff + mypy + pytest green.
 * Keep eval finite-loss detection working and make `make export` produce loadable `model-f16.gguf` and `model-q4_k_m.gguf` for Tiny.
 
 ## Non-Goals
@@ -39,7 +39,7 @@ Terms: QLoRA (frozen 4-bit base plus small trainable side weights); GGUF (loadab
 * **Tiny architecture (resolved 2026-11-11, recorded in `configs/qlora-tiny.yaml` header)**: vocab 32768 with tied embeddings (3B 65537 rationale N/A), hybrid Mamba+attention (keep `out_proj` skip), reasoning delimiters shipped, NO chat template (Tiny fallback in `model.py`); layer names assumed from 3B family, re-verify on first smoke.
 * **Training method**: small-rank LoRA vs 4-bit QLoRA vs full — needs a Tiny probe, not 3B habit.
 * **CUDA base tag**: which tag matches `torch==2.11.0` and carries sm_75 + sm_86.
-* **GHCR policy (decided 2026-11-11)**: public `ghcr.io/sourcepirate/falcon-h1-tiny`, tags `:sha` / `:tiny` / `:latest`, push on version tags (`v*`) only, build-only on PRs.
+* **GHCR policy (decided 2026-11-11, extended 2026-11-12)**: public `ghcr.io/sourcepirate/falcon-h1-tiny`, tags `:sha` / `:tiny` / `:latest`, push on `main` pushes and version tags (`v*`), build-only on PRs.
 * **llama.cpp support**: does `convert_hf_to_gguf.py` accept the Tiny hybrid arch; which pin fixes it if not.
 
 ## Risks / Assumptions / Dependencies
@@ -50,7 +50,7 @@ Terms: QLoRA (frozen 4-bit base plus small trainable side weights); GGUF (loadab
 | Adverse Hub facts (no template, layer mismatch, no Mamba mix) | Named branch per case: template absent takes the recorded fallback; layer mismatch re-derives skip/target lists before writing YAML; no Mamba mix drops the `out_proj` skip under the warn-only rule | implementer |
 | v1 recipe wrong for 90M (rank, quant, lengths) | Probe defaults with fallback trigger and overfit/drop-rate gates; probe log records overlong-drop % and loss; caps cut only on trigger | implementer |
 | CUDA base mismatch (sm_75 + sm_86) | Example tag decision recorded before Dockerfile lands; T4 smoke log proves both arches | implementer |
-| GHCR policy (decided 2026-11-11: public `ghcr.io/sourcepirate`, tags-only) | CI item follows the decision; no code change beyond the `image` job | repo owner |
+| GHCR policy (decided 2026-11-11, extended 2026-11-12: public `ghcr.io/sourcepirate`, push on `main` + tags) | CI item follows the decision; no code change beyond the `image` job | repo owner |
 | `llama.cpp` rejects Tiny hybrid arch | Pin plus contingency (next pin or patch under `export.llama_cpp_dir`); export log shows both GGUF loads | implementer |
 | Hub datasets or RunPod 3090 unavailable | Public Hub pulls assumed; data manifest proves corpus, pod log proves run; manual retry on preemption, no automation | implementer |
 
@@ -80,9 +80,9 @@ Terms: QLoRA (frozen 4-bit base plus small trainable side weights); GGUF (loadab
 * **When**: CI runs the `image` job with `push: false`.
 * **Then**: image builds without pushing; `check` (ruff), `types` (mypy), and `resolvable` jobs pass.
 
-### CUJ 5: CI publish on version tag
+### CUJ 5: CI publish on main push or version tag
 
-* **Given**: version tag `v*` pushed.
+* **Given**: push to `main` or version tag `v*` pushed.
 * **When**: CI runs the `image` job with `push: true`.
 * **Then**: GHCR holds `:sha`, `:tiny`, and `:latest` tags for the public `ghcr.io/sourcepirate/falcon-h1-tiny` image.
 
@@ -108,7 +108,7 @@ What changes and why:
 * **Model load (`src/cyberft/model.py`, modify)**: Hub facts to record first are chat template present/absent, reasoning delimiters, special tokens, Mamba/attention mix, and vocab size. `build_tokenizer` keeps its raise-unless-template behavior until the read, then takes the named fallback if Tiny-R needs it; `_load_base` keeps `attn: sdpa` and 4-bit until the read locks Tiny values (`llm_int8_skip_modules`, `attn_implementation`). No new public functions; only corrected constants and template handling.
 * **Corpus (`src/cyberft/loaders.py`, modify only if needed)**: keep the seven loader classes and the exact-7-set check in `build_messages`. Change only caps/lengths via YAML, unless the Tiny template renders `kimi-cyber-reasoning` rows into overlong sequences that get dropped — then adjust `max_chars` or row mapping in a small, tested edit.
 * **Dockerfile (create)**: one CUDA base `nvidia/cuda:12.6.3-cudnn-devel-ubuntu22.04` with torch from `https://download.pytorch.org/whl/cu126` (torch 2.11.0 cu126 verified; confirm-or-repin on first build), Python 3.11, workdir `/work`, ordered layers (copy `pyproject.toml` + `src`, `pip install .[train]`, `requirements-fast.txt` fused-kernel layer with pure-torch fallback), `ENV CONFIG=configs/qlora-tiny.yaml`. Documents literal `docker build -t ghcr.io/sourcepirate/falcon-h1-tiny:dev .`, `docker run --gpus all` smoke, and RunPod pull-and-run commands. Expected size 8-12 GB; over 12 GB measured by `docker images` fails this pass.
-* **CI (`.github/workflows/ci.yml`, modify)**: keep the CPU jobs untouched (`check` runs ruff plus pytest, `types` runs mypy, `resolvable` dry-runs the dependency resolve). Add a new job with `packages: write` that logs in to GHCR, builds the image on every PR without pushing, and pushes `:sha` / `:tiny` / `:latest` to public `ghcr.io/sourcepirate/falcon-h1-tiny` on version tags (`v*`) only.
+* **CI (`.github/workflows/ci.yml`, modify)**: keep the CPU jobs untouched (`check` runs ruff plus pytest, `types` runs mypy, `resolvable` dry-runs the dependency resolve). Add a new job with `packages: write` that logs in to GHCR, builds the image on every PR without pushing, and pushes `:sha` / `:tiny` / `:latest` to public `ghcr.io/sourcepirate/falcon-h1-tiny` on `main` pushes and version tags (`v*`) both.
 * **Docs (`README.md`, `Makefile`, modify lightly)**: README quickstart is the canonical Tiny entry (build/run/pull + `CONFIG=... make smoke/train/eval/export` + GGUF load check); mark 3B configs legacy. `Makefile` comments link there. No new automation.
 
 Failure handling stays as today: `ConfigError` on bad YAML, `NotBuiltError` on stale cache, `NonFiniteLossError` on NaN (training stops, eval names the row). On a non-finite row: eval names it in the broken list; quarantine by dropping or re-examining it in the loader, then rerun eval. One bad row triggers investigation; the pass requires zero non-finite rows after quarantine or a documented cause. Export asserts each output exists. Tiny acceptance is smoke finite plus eval zero non-finite rows plus render overlong-drop at or under 5 percent; deeper quality checks are deferred for this pass.
@@ -155,7 +155,7 @@ Failure handling stays as today: `ConfigError` on bad YAML, `NotBuiltError` on s
 
 ## Non-Functional Requirements
 
-* Rollout: tags `:sha` (full SHA for traceability), `:tiny`, and `:latest` (moving alias, never a rollback target). Retain every release `:sha` tag and every `:tiny` release tag; no auto-deploy, manual pod + container run only. Rollback is pulling the prior release `:sha` tag.
+* Rollout: tags `:sha` (full SHA for traceability), `:tiny`, and `:latest` (moving alias, never a rollback target). Retain every release `:sha` tag and every `:tiny` release tag; no auto-deploy, manual pod + container run only. Pushes happen on `main` pushes and version tags. Rollback is pulling the prior release `:sha` tag.
 * Security: GHCR package `ghcr.io/sourcepirate/falcon-h1-tiny` is public, approved by repo owner (Sathya) 2026-11-11; CI uses `GITHUB_TOKEN` with `packages: write`; no secrets in the image; datasets remain public Hub pulls.
 * Performance: T4 smoke is 400 rows and 5 steps (target under 30 minutes on T4, informational: slower only records actual and investigates caps before the 3090 run). 3090 full run is one epoch over the full corpus at starting caps (rows counted in the data manifest; wall-clock recorded in the run log, non-gating). Image build time recorded in the run log, non-gating; `docker images` size recorded; over 12 GB fails this pass (expected image 8-12 GB from CUDA base plus torch; on failure trim build outputs and re-measure, or record the base-alone size as accepted-unknown).
 * Deferred with reason: RunPod preemption is manual retry; logs are Trainer logs plus the data manifest; CI minutes/storage, Hub checksums, and base-image digest pinning are recorded but not budgeted in this pass.
@@ -213,7 +213,7 @@ Failure handling stays as today: `ConfigError` on bad YAML, `NotBuiltError` on s
 #### 8. `.github/workflows/ci.yml` (Modify)
 
 * **Type / Scope**: CI build and publish.
-* **Proposed Changes**: Keep `check` (ruff + pytest), `types` (mypy), `resolvable` jobs untouched. Add `image` job with `permissions: packages: write`: docker/login-action to GHCR, docker/setup-buildx-action, docker/build-push-action with `push: ${{ github.event_name != 'pull_request' }}`, `tags: ghcr.io/sourcepirate/falcon-h1-tiny:sha-${{ github.sha }}\n  ghcr.io/sourcepirate/falcon-h1-tiny:tiny\n  ghcr.io/sourcepirate/falcon-h1-tiny:latest` (tag push only fires on `v*` tags via the workflow `on:` filter; PRs build with `push: false`), plus `cache-from: type=gha` / `cache-to: type=gha,mode=max`.
+* **Proposed Changes**: Keep `check` (ruff + pytest), `types` (mypy), `resolvable` jobs untouched. Add `image` job with `permissions: packages: write`: docker/login-action to GHCR, docker/setup-buildx-action, docker/build-push-action with `push: ${{ github.event_name != 'pull_request' }}`, `tags: ghcr.io/sourcepirate/falcon-h1-tiny:sha-${{ github.sha }}\n  ghcr.io/sourcepirate/falcon-h1-tiny:tiny\n  ghcr.io/sourcepirate/falcon-h1-tiny:latest` (the workflow `if:` fires on PRs, `main` pushes, and `v*` tags; PRs build with `push: false`, `main` and tags push), plus `cache-from: type=gha` / `cache-to: type=gha,mode=max`.
 
 #### 9. `README.md` (Modify)
 

@@ -129,7 +129,7 @@ Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`
 - **Memory**: 4-bit base + LoRA + gradient checkpointing fits 16 GB at
   `micro_batch: 1`, `max_len: 2048`. Raise `micro_batch` before `max_len`.
 - **Export RAM**: the CPU bf16 merge needs ~7 GB of host RAM.
-- **CI**: ruff, mypy and the CPU tests run on every push; the `image` job builds on PRs (no push) and pushes `:sha`/`:tiny`/`:latest` to GHCR on `v*` tags. The GPU smoke test
+- **CI**: ruff, mypy and the CPU tests run on every push; the `image` job builds on PRs (no push) and pushes `:sha`/`:tiny`/`:latest` to GHCR on `main` pushes and `v*` tags. The GPU smoke test
   stays manual (`make smoke`, or `CONFIG=configs/qlora-tiny.yaml make smoke` in the container).
 
 ## Troubleshooting
