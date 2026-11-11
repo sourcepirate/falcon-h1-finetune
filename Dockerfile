@@ -21,8 +21,9 @@ COPY pyproject.toml README.md Makefile requirements-fast.txt ./
 COPY src/ src/
 COPY configs/ configs/
 
-# cu126 index so the torch CUDA build is explicit, not pip-default luck.
-RUN python3 -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu126 ".[train]"
+# cu126 first so the torch CUDA build is explicit, not pip-default luck;
+# PyPI fallback serves everything the torch index does not host.
+RUN python3 -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu126 --extra-index-url https://pypi.org/simple ".[train]"
 # Fused-kernel path; failure falls back to the pure-torch Mamba path
 # (documented T4 behavior) and is recorded in the build log.
 RUN python3 -m pip install --no-cache-dir -r requirements-fast.txt --no-build-isolation \
