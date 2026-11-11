@@ -11,8 +11,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /work
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip git \
- && rm -rf /var/lib/apt/lists/*
+ && apt-get install -y --no-install-recommends python3.11 python3.11-venv make git \
+ && rm -rf /var/lib/apt/lists/* \
+ && python3.11 -m ensurepip --upgrade \
+ && ln -sf /usr/bin/python3.11 /usr/bin/python \
+ && ln -sf /usr/bin/python3.11 /usr/bin/python3
 
 COPY pyproject.toml README.md Makefile requirements-fast.txt ./
 COPY src/ src/
