@@ -1,0 +1,7 @@
+outputs/
+data/processed/
+.git
+__pycache__
+vendor/**/build
+vendor/**/build_*
+.pytest_cache

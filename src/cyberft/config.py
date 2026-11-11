@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +14,7 @@ import yaml
 from .errors import ConfigError
 
 DTYPES = ("auto", "bf16", "fp16")
+QUANT = ("4bit", "none")
 ATTENTION = ("sdpa", "flash_attention_2")
 # TII: these modules bypass the LoRA forward and feed a fused kernel.
 FORBIDDEN_LORA_TARGETS = {"out_proj", "conv1d"}
@@ -36,6 +38,7 @@ class ModelConfig:
     id: str
     dtype: str = "auto"
     attn: str = "sdpa"
+    quant: str = "4bit"               # 4bit: NF4 QLoRA base | none: plain LoRA, no bitsandbytes
     bnb_skip_modules: tuple[str, ...] = ("out_proj", "lm_head")
 
 
@@ -88,6 +91,7 @@ class ExportConfig:
     gguf_dir: Path = Path("outputs/gguf")
     quant: str = "Q4_K_M"
     llama_cpp_dir: Path = Path("vendor/llama.cpp")
+    llama_cpp_rev: str | None = None  # pin SHA consumed by the clone step (Dockerfile/CI), not by export.py
 
 
 @dataclass(frozen=True)
@@ -103,19 +107,24 @@ class Config:
             raise ConfigError("model.id is required")
         if self.model.dtype not in DTYPES:
             raise ConfigError(f"model.dtype must be one of {DTYPES}, got {self.model.dtype!r}")
+        if self.model.quant not in QUANT:
+            raise ConfigError(f"model.quant must be one of {QUANT}, got {self.model.quant!r}")
         if self.model.attn not in ATTENTION:
             raise ConfigError(f"model.attn must be one of {ATTENTION}, got {self.model.attn!r}")
-        if "out_proj" not in self.model.bnb_skip_modules:
-            raise ConfigError(
-                "model.bnb_skip_modules must contain 'out_proj': Mamba's out_proj feeds a fused "
-                "kernel that cannot consume a 4-bit packed weight (TII fine-tuning guide)."
-            )
-        if "lm_head" not in self.model.bnb_skip_modules:
-            raise ConfigError(
-                "model.bnb_skip_modules must contain 'lm_head': Falcon-H1's vocab size (65537) "
-                "is not aligned to bitsandbytes' 4-bit kernel block size, causing a CUDA "
-                "misaligned address error. Keeping lm_head in bf16/fp16 avoids this."
-            )
+        # 3B heritage: Mamba's out_proj feeds a fused kernel that cannot consume a
+        # 4-bit packed weight, and Falcon-H1-3B's vocab (65537) is not aligned to
+        # bitsandbytes' 4-bit block size. Both are warnings now: Tiny-R-90M has
+        # vocab 32768 with tied embeddings, so a missing skip may be legitimate.
+        for module, why in (
+            ("out_proj", "Mamba's out_proj feeds a fused kernel that cannot consume a 4-bit packed weight"),
+            ("lm_head", "an unaligned vocab size breaks bitsandbytes' 4-bit kernels"),
+        ):
+            if module not in self.model.bnb_skip_modules:
+                warnings.warn(
+                    f"model.bnb_skip_modules is missing {module!r}: {why}. "
+                    "Quantizing it may fail at load time.",
+                    stacklevel=2,
+                )
 
         bad = FORBIDDEN_LORA_TARGETS.intersection(self.lora.target_modules)
         if bad:

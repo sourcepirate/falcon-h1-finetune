@@ -88,19 +88,21 @@ def test_out_proj_as_lora_target_is_rejected(tmp_path):
         load_config(path)
 
 
-def test_missing_bnb_skip_modules_is_rejected(tmp_path):
+def test_missing_bnb_skip_modules_warns_but_loads(tmp_path):
     path = _variant(tmp_path, 'bnb_skip_modules: ["out_proj", "lm_head"]', "bnb_skip_modules: []")
-    with pytest.raises(ConfigError, match="out_proj"):
-        load_config(path)
+    with pytest.warns(UserWarning, match="out_proj"):
+        cfg = load_config(path)
+    assert cfg.model.bnb_skip_modules == ()
 
 
-def test_missing_lm_head_skip_is_rejected(tmp_path):
+def test_missing_lm_head_skip_warns_but_loads(tmp_path):
     path = _variant(
         tmp_path, 'bnb_skip_modules: ["out_proj", "lm_head"]',
         'bnb_skip_modules: ["out_proj"]',
     )
-    with pytest.raises(ConfigError, match="lm_head"):
-        load_config(path)
+    with pytest.warns(UserWarning, match="lm_head"):
+        cfg = load_config(path)
+    assert cfg.model.bnb_skip_modules == ("out_proj",)
 
 
 def test_bad_dtype_is_rejected(tmp_path):
@@ -137,6 +139,34 @@ def test_parquet_and_subset_are_exclusive():
     source = SourceConfig(name="kali", repo="org/a", parquet="p.parquet", subset="default")
     with pytest.raises(ConfigError, match="mutually exclusive"):
         _cfg_with(source).validate()
+
+
+TINY_CONFIG = REPO / "configs" / "qlora-tiny.yaml"
+
+
+def test_tiny_config_is_valid_and_matches_3b_sources():
+    full = load_config(CONFIG)
+    tiny = load_config(TINY_CONFIG)
+    assert tiny.model.id == "tiiuae/Falcon-H1-Tiny-R-90M"
+    assert tiny.model.quant in ("4bit", "none")
+    assert [s.name for s in tiny.data.sources] == [s.name for s in full.data.sources]
+    assert len(tiny.data.sources) == 7
+    assert tiny.data.eval_max_len <= tiny.data.max_len
+    assert tiny.export.llama_cpp_rev is None
+
+
+def test_bad_quant_is_rejected(tmp_path):
+    path = _variant(tmp_path, "dtype: auto", "dtype: auto\n  quant: int8")
+    with pytest.raises(ConfigError, match="quant"):
+        load_config(path)
+
+
+def test_quant_none_is_valid(tmp_path):
+    raw = TINY_CONFIG.read_text(encoding="utf-8")
+    assert "quant: 4bit" in raw, "fixture drifted"
+    path = tmp_path / "tiny-none.yaml"
+    path.write_text(raw.replace("quant: 4bit", "quant: none"), encoding="utf-8")
+    assert load_config(path).model.quant == "none"
 
 
 def test_t4_config_is_valid_and_smaller():

@@ -25,6 +25,28 @@ from .config import Config
 
 log = logging.getLogger(__name__)
 
+# Fallback chat template for tokenizers that ship none (verified 2026-11-11:
+# tiiuae/Falcon-H1-Tiny-R-90M tokenizer_config.json has no chat_template).
+# Llama-3-style headers built from tokens the Tiny tokenizer owns
+# (<|begin_of_text|>, <|start_header_id|>, <|end_header_id|>, <|eot_id|>).
+TINY_FALLBACK_CHAT_TEMPLATE = (
+    "{%- for message in messages %}"
+    "{%- if message['role'] == 'system' %}"
+    "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n"
+    "{{ message['content'] }}<|eot_id|>"
+    "{%- elif message['role'] == 'user' %}"
+    "<|start_header_id|>user<|end_header_id|>\n\n"
+    "{{ message['content'] }}<|eot_id|>"
+    "{%- elif message['role'] == 'assistant' %}"
+    "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    "{{ message['content'] }}<|eot_id|>"
+    "{%- endif %}"
+    "{%- endfor %}"
+    "{%- if add_generation_prompt %}"
+    "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    "{%- endif %}"
+)
+
 
 def amp_dtype(cfg: Config) -> torch.dtype:
     """bf16 where it is real, fp16 otherwise. ``including_emulation=False`` is what makes
@@ -39,13 +61,24 @@ def amp_dtype(cfg: Config) -> torch.dtype:
 def build_tokenizer(cfg: Config) -> PreTrainedTokenizerBase:
     tokenizer = AutoTokenizer.from_pretrained(cfg.model.id)
     if tokenizer.chat_template is None:
-        raise RuntimeError(f"{cfg.model.id} ships no chat template")
+        if "tiny" in cfg.model.id.lower():
+            log.info("no chat template shipped; using Tiny fallback template")
+            tokenizer.chat_template = TINY_FALLBACK_CHAT_TEMPLATE
+        else:
+            raise RuntimeError(f"{cfg.model.id} ships no chat template")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
 
 
 def _load_base(cfg: Config, dtype: torch.dtype) -> PreTrainedModel:
+    if cfg.model.quant == "none":
+        return AutoModelForCausalLM.from_pretrained(
+            cfg.model.id,
+            dtype=dtype,
+            device_map={"": 0},
+            attn_implementation=cfg.model.attn,
+        )
     bnb = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
@@ -92,8 +125,14 @@ def build_model(cfg: Config) -> PeftModel:
 
 
 def attach_adapter(cfg: Config, adapter_dir: str | os.PathLike) -> PeftModel:
-    """Trained adapter on a fresh 4-bit base, for evaluation and export."""
-    base = _load_base(cfg, amp_dtype(cfg))
+    """Trained adapter on a fresh base (quantized per model.quant), for evaluation and export."""
+    if cfg.model.quant == "none":
+        base = AutoModelForCausalLM.from_pretrained(
+            cfg.model.id, dtype=amp_dtype(cfg), device_map={"": 0},
+            attn_implementation=cfg.model.attn,
+        )
+    else:
+        base = _load_base(cfg, amp_dtype(cfg))
     model = PeftModel.from_pretrained(base, str(adapter_dir), is_trainable=False)
     model.eval()
     return model

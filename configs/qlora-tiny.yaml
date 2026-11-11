@@ -1,0 +1,95 @@
+# Falcon-H1-Tiny-R-90M QLoRA, single config for T4 smoke + RTX 3090 full train.
+# 3B files (qlora-3b.yaml, qlora-3b-t4.yaml) stay untouched as legacy.
+#
+# Hub facts (recorded 2026-11-11 from tiiuae/Falcon-H1-Tiny-R-90M config.json
+# + tokenizer_config.json, transformers 4.57.1-era files):
+# - architecture: FalconH1ForCausalLM, model_type falcon_h1, hybrid Mamba + attention
+# - vocab_size: 32768 (NOT 65537: the 3B lm_head-misalignment reason does not apply)
+# - tie_word_embeddings: true
+# - hidden 512, 24 layers, 8 attn heads / 2 kv heads, head_dim 64
+# - reasoning delimiters shipped (<thinking>, <tool_call>, <explanation>, ...),
+#   but tokenizer_config.json ships NO chat_template -> model.py Tiny fallback used
+# - layer names (q/k/v/o/in/gate/up/down_proj, out_proj) assumed from 3B family;
+#   re-verify against the loaded model on first smoke (adverse branch: re-derive
+#   skip/target lists, drop lm_head skip under the warn-only rule if unneeded)
+# - max_len 1024 / eval_max_len 512 chosen T4-safe (fp16 SSM stability), not memory
+
+model:
+  id: tiiuae/Falcon-H1-Tiny-R-90M
+  # auto resolves to fp16 on a T4, bf16 on Ampere+. Tiny ships dtype bfloat16.
+  dtype: auto
+  attn: sdpa          # sdpa | flash_attention_2 (requires flash-attn)
+  quant: 4bit         # 4bit: NF4 QLoRA base | none: plain LoRA (probe fallback)
+  # out_proj kept: Mamba's out_proj feeds a fused kernel that cannot consume a
+  # quantized weight. lm_head kept as the safe default; the warn-only rule
+  # allows dropping it (vocab 32768 + tied embeddings need no skip).
+  bnb_skip_modules: ["out_proj", "lm_head"]
+
+data:
+  output_dir: data/processed
+  max_len: 1024        # training examples longer than this are dropped, not truncated
+  eval_max_len: 512    # eval rows come only from this band
+  eval_size: 300
+  seed: 42
+  # Same seven sources as qlora-3b.yaml; caps copied as the starting point.
+  sources:
+    - name: redteam
+      repo: WNT3D/Ultimate-Offensive-Red-Team
+      parquet: default/train/0000.parquet
+      revision: refs/convert/parquet
+      cap: 20000
+    - name: kali
+      repo: suryanshp1/kali-linux-pentesting-data
+      cap: 343
+    - name: kimi
+      repo: echel0nn1881/kimi-cyber-reasoning
+      cap: 997
+    - name: cti
+      repo: reloading0101/threat-intelligence-dataset
+      subset: default
+      splits: [train, validation]
+      cap: 6000
+    - name: exploitdb
+      repo: Waiper/ExploitDB_DataSet
+      parquet: datasets/exploitdb_dataset.parquet
+      cap: 8000
+    - name: linuxcmd
+      repo: Romit2004/LinuxCommands
+      cap: 6000
+    - name: debian
+      repo: 2etatg/Debian_Hacking_Networking
+      cap: 965
+
+lora:
+  r: 8
+  alpha: 16
+  dropout: 0.05
+  # Never out_proj / conv1d: those bypass the LoRA forward and feed a fused kernel.
+  target_modules: [q_proj, k_proj, v_proj, o_proj, in_proj, gate_proj, up_proj, down_proj]
+
+train:
+  output_dir: outputs/falcon-h1-tiny-cyber
+  micro_batch: 1
+  grad_accum: 8
+  epochs: 1
+  max_steps: -1      # -1 = full epochs; set >0 in YAML for probes
+  lr: 2.0e-4         # fallback 1.0e-4 if the probe NaNs
+  warmup_ratio: 0.03
+  max_grad_norm: 1.0
+  optim: paged_adamw_8bit
+  gradient_checkpointing: true
+  logging_steps: 10
+  save_steps: 500
+  eval_steps: 500
+  save_total_limit: 2
+  report_to: []        # e.g. ["tensorboard"]
+  num_workers: 2
+  seed: 42
+  resume: true         # resume from the newest checkpoint if one exists
+
+export:
+  merged_dir: outputs/falcon-h1-tiny-merged
+  gguf_dir: outputs/gguf-tiny
+  quant: Q4_K_M
+  llama_cpp_dir: vendor/llama.cpp
+  llama_cpp_rev: null  # TODO(implementer, before-export): pin SHA under test

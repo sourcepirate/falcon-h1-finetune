@@ -50,12 +50,40 @@ the cache instead of silently training on stale rows.
 
 | File | For | Precision | `max_len` |
 |---|---|---|---|
-| `configs/qlora-3b.yaml` | Ampere+ (A100, L4, RTX 30xx/40xx) | bf16 | 2048 |
-| `configs/qlora-3b-t4.yaml` | Colab T4 | fp16 | 1024 |
+| `configs/qlora-tiny.yaml` | T4 smoke + RTX 3090 full train (Tiny-R-90M) | auto (fp16 T4 / bf16 Ampere) | 1024 |
+| `configs/qlora-3b.yaml` | Ampere+ (A100, L4, RTX 30xx/40xx), legacy | bf16 | 2048 |
+| `configs/qlora-3b-t4.yaml` | Colab T4, legacy | fp16 | 1024 |
 
 LoRA: `r=32, alpha=16, dropout=0.05`, targets `q/k/v/o/in/gate/up/down_proj`.
 Training: 4-bit NF4 base, `paged_adamw_8bit`, `lr=2e-4`, 1 epoch, cosine schedule.
 `notebooks/run.ipynb` is the T4 entry point (`Run All` with `RUN_TRAIN = False` is safe).
+
+## Tiny-R-90M quickstart
+
+The 3B configs stay readable as legacy. All Tiny work uses
+`CONFIG=configs/qlora-tiny.yaml` (v1 probe: `r=8`, 4-bit baseline,
+LoRA-only fallback; see the config header for Hub facts):
+
+```bash
+CONFIG=configs/qlora-tiny.yaml make smoke   # 400 rows -> 5 steps, T4 gate
+CONFIG=configs/qlora-tiny.yaml make data train eval
+CONFIG=configs/qlora-tiny.yaml make export  # f16 + Q4_K_M, both must load
+```
+
+Container (one image, sm_75 + sm_86; over 12 GB fails this pass):
+
+```bash
+docker build -t ghcr.io/sourcepirate/falcon-h1-tiny:dev .
+docker run --gpus all ghcr.io/sourcepirate/falcon-h1-tiny:dev make smoke
+# RunPod 3090: pull ghcr.io/sourcepirate/falcon-h1-tiny:tiny, same make targets
+```
+
+GGUF load check:
+
+```bash
+llama-cli -m outputs/gguf-tiny/model-f16.gguf -p "Write a tcpdump command for DNS only" --n-predict 64
+llama-cli -m outputs/gguf-tiny/model-q4_k_m.gguf -p "Write a tcpdump command for DNS only" --n-predict 64
+```
 
 ## CLI
 
@@ -101,8 +129,8 @@ Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`
 - **Memory**: 4-bit base + LoRA + gradient checkpointing fits 16 GB at
   `micro_batch: 1`, `max_len: 2048`. Raise `micro_batch` before `max_len`.
 - **Export RAM**: the CPU bf16 merge needs ~7 GB of host RAM.
-- **CI**: ruff, mypy and the CPU tests run on every push; the GPU smoke test
-  stays manual (`make smoke`).
+- **CI**: ruff, mypy and the CPU tests run on every push; the `image` job builds on PRs (no push) and pushes `:sha`/`:tiny`/`:latest` to GHCR on `v*` tags. The GPU smoke test
+  stays manual (`make smoke`, or `CONFIG=configs/qlora-tiny.yaml make smoke` in the container).
 
 ## Troubleshooting
 
