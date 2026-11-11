@@ -97,7 +97,8 @@ def test_missing_bnb_skip_modules_warns_but_loads(tmp_path):
 
 def test_missing_lm_head_skip_warns_but_loads(tmp_path):
     path = _variant(
-        tmp_path, 'bnb_skip_modules: ["out_proj", "lm_head"]',
+        tmp_path,
+        'bnb_skip_modules: ["out_proj", "lm_head"]',
         'bnb_skip_modules: ["out_proj"]',
     )
     with pytest.warns(UserWarning, match="lm_head"):

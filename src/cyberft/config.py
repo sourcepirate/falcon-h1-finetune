@@ -38,7 +38,7 @@ class ModelConfig:
     id: str
     dtype: str = "auto"
     attn: str = "sdpa"
-    quant: str = "4bit"               # 4bit: NF4 QLoRA base | none: plain LoRA, no bitsandbytes
+    quant: str = "4bit"  # 4bit: NF4 QLoRA base | none: plain LoRA, no bitsandbytes
     bnb_skip_modules: tuple[str, ...] = ("out_proj", "lm_head")
 
 
