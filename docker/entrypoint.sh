@@ -11,4 +11,4 @@ if [ -n "${GOGGLE_RUN_CONFIG_B64:-}" ]; then
   echo "wrote config to $dest"
 fi
 
-exec python -m cyberft.cli "$@"
+exec "$@"
