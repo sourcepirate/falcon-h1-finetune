@@ -76,8 +76,9 @@ Container (one image, sm_75 + sm_86; over 12 GB fails this pass):
 
 ```bash
 docker build -t ghcr.io/sourcepirate/falcon-h1-tiny:dev .
-docker run --gpus all ghcr.io/sourcepirate/falcon-h1-tiny:dev python -m cyberft.cli -c configs/qlora-tiny.yaml train --smoke
+docker run --gpus all ghcr.io/sourcepirate/falcon-h1-tiny:dev train -c configs/qlora-tiny.yaml --smoke
 # RunPod 3090: pull ghcr.io/sourcepirate/falcon-h1-tiny:tiny, same CLI commands
+# Goggle: register image.contract.json, submit a run; metrics stream via wandb
 ```
 
 GGUF load check:
@@ -94,7 +95,7 @@ No command requires a flag (`--config`, or `-c`, defaults to `configs/qlora-3b.y
 ```bash
 python -m cyberft.cli info      # gpu, dtype, resolved config, corpus stats
 python -m cyberft.cli data      # --smoke, --force
-python -m cyberft.cli train     # --smoke
+python -m cyberft.cli train     # --smoke, --wandb/--no-wandb
 python -m cyberft.cli eval      # --smoke
 python -m cyberft.cli export
 ```
@@ -121,7 +122,33 @@ path = export_gguf(cfg, adapter=adapter)       # Path to the quantized GGUF
 ```
 
 Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`,
-`NonFiniteLossError`) — the library never parses arguments or calls `sys.exit`.
+`TrackingError`, `NonFiniteLossError`) — the library never parses arguments or calls `sys.exit`.
+
+## Metrics (wandb / Goggle)
+
+`train` reports to [Goggle](https://github.com/sourcepirate/goggles) with the
+stock `wandb` client (`wandb>=0.31,<0.32`): history `train/loss`, `train/lr`,
+`train/epoch`, `train/grad_norm`, `eval/loss`; summary `_total_steps`
+(the Goggle progress bar reads this — `train.max_steps` is `-1` for
+full-epoch runs), `train/steps`, `train/final_loss`, `eval/final_loss`.
+
+```bash
+python -m cyberft.cli -c configs/qlora-tiny.yaml train --wandb   # force on (needs key or WANDB_MODE)
+python -m cyberft.cli -c configs/qlora-tiny.yaml train --no-wandb # force off
+WANDB_MODE=offline python -m cyberft.cli -c configs/qlora-tiny.yaml train --smoke --wandb  # local, no network
+```
+
+Enablement: `wandb.enabled` (`auto` by default) with CLI override winning,
+then config. `auto` means on with `WANDB_API_KEY` or
+`WANDB_MODE=online/offline`, off in `--smoke` and off without a key.
+On Goggle the injected `WANDB_*` env binds project/entity/run without
+editing YAML; `--wandb` in the contract command makes a mis-wired job fail
+at init (`TrackingError`) instead of completing with zero metrics.
+`wandb.finish(exit_code=0)` marks the run `completed` only after the adapter
+saves — a NaN loss or a failed save reports failed, never completed.
+`train.report_to` stays for tensorboard-style backends; `"wandb"` there is
+rejected because HF's built-in callback would finish the run before the
+adapter saves.
 
 ## Operating notes
 
@@ -132,7 +159,7 @@ Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`
   `micro_batch: 1`, `max_len: 2048`. Raise `micro_batch` before `max_len`.
 - **Export RAM**: the CPU bf16 merge needs ~7 GB of host RAM.
 - **CI**: ruff, mypy and the CPU tests run on every push; the `image` job builds on PRs (no push) and pushes `:sha`/`:tiny`/`:latest` to GHCR on `main` pushes and `v*` tags. The GPU smoke test
-  stays manual (`python -m cyberft.cli -c configs/qlora-tiny.yaml train --smoke` in the container).
+  stays manual (`train -c configs/qlora-tiny.yaml --smoke` in the container).
 
 ## Troubleshooting
 
@@ -144,6 +171,10 @@ Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`
 | `NonFiniteLossError` on a T4 (fp16) | fp16 SSM arithmetic on a long row | lower `max_len` (try 768), then `lr` to 1e-4 |
 | `No kernel image is available` from `mamba-ssm` | wrong CUDA arch | reinstall `requirements-fast.txt` on the target GPU |
 | `ImportError: ... requires bitsandbytes` | runtime installed without the `train` extra | `pip install -e ".[train]"`, restart the kernel |
+| `wandb.finish` never runs / Goggle status `unknown` | trainer crashed before `finish` | check logs for the pre-finish exception; only exit 0 after the adapter save marks `completed` |
+| `ConfigError: train.report_to must not contain "wandb"` | HF callback would finish before the adapter saves | use the `wandb:` section (enabled/project/entity/tags) instead |
+| `TrackingError: wandb.init failed` on Goggle | `inject_wandb` missing or token scope wrong | re-check the image contract flags and the project token |
+| `DependencyError: wandb tracking is enabled but ...` | `--wandb` without the client installed | `pip install -e ".[train]"` or pass `--no-wandb` |
 
 ## Licence note
 

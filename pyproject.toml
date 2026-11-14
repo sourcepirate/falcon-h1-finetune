@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cyberft"
-version = "0.4.0"
+version = "0.5.0"
 description = "QLoRA fine-tuning of Falcon-H1-3B-Instruct on red-team / cyber-security data"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,7 @@ train = [
   "safetensors>=0.8",
   "PyYAML>=6.0",
   "tqdm>=4.66",
+  "wandb>=0.31,<0.32",  # stock client for Goggle metrics (init/log/summary/finish)
 ]
 # Colab T4: same as `train` minus torch, so pip cannot replace Colab's working
 # CUDA build. Pin the pre-installed torch first:
@@ -39,6 +40,7 @@ colab = [
   "safetensors>=0.8",
   "PyYAML>=6.0",
   "tqdm>=4.66",
+  "wandb>=0.31,<0.32",  # same client as `train`; colab is train-minus-torch
 ]
 
 [project.scripts]
