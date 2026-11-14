@@ -1,4 +1,4 @@
-"""The CLI surface must stay minimal: --config everywhere, --smoke/--force only."""
+"""The CLI surface must stay minimal: --config (-c) everywhere, --smoke/--force only."""
 
 import sys
 from pathlib import Path

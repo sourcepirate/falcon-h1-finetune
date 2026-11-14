@@ -11,7 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def common(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--config", default="configs/qlora-3b.yaml")
+        p.add_argument("-c", "--config", default="configs/qlora-3b.yaml")
 
     p_data = sub.add_parser("data", help="build and cache the corpus")
     common(p_data)

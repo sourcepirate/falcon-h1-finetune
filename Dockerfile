@@ -29,8 +29,10 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu12
 RUN pip install --no-cache-dir -r requirements-fast.txt --no-build-isolation \
  || echo "WARNING: fast kernels not installed; using pure-torch Mamba fallback"
 
-# Smoke:  docker run --gpus all <image> make smoke
-# Full:    docker run --gpus all <image> make data train eval
-# Export:  docker run --gpus all <image> make export
-# RunPod:  pull ghcr.io/sourcepirate/falcon-h1-tiny:tiny, same commands.
-CMD ["make", "smoke"]
+# Smoke:  docker run --gpus all <image> python -m cyberft.cli -c configs/qlora-tiny.yaml train --smoke
+# Full:    docker run --gpus all <image> python -m cyberft.cli -c configs/qlora-tiny.yaml data \
+#            && python -m cyberft.cli -c configs/qlora-tiny.yaml train \
+#            && python -m cyberft.cli -c configs/qlora-tiny.yaml eval
+# Export:  docker run --gpus all <image> python -m cyberft.cli -c configs/qlora-tiny.yaml export
+# RunPod:  pull ghcr.io/sourcepirate/falcon-h1-tiny:tiny, same CLI commands.
+CMD ["python", "-m", "cyberft.cli", "train", "-c", "configs/qlora-tiny.yaml", "--smoke"]

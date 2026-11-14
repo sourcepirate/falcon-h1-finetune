@@ -60,22 +60,24 @@ Training: 4-bit NF4 base, `paged_adamw_8bit`, `lr=2e-4`, 1 epoch, cosine schedul
 
 ## Tiny-R-90M quickstart
 
-The 3B configs stay readable as legacy. All Tiny work uses
-`CONFIG=configs/qlora-tiny.yaml` (v1 probe: `r=8`, 4-bit baseline,
-LoRA-only fallback; see the config header for Hub facts):
+The 3B configs stay readable as legacy. Production runs use the `cyberft` CLI
+directly with `-c` (no `make` needed):
 
 ```bash
-CONFIG=configs/qlora-tiny.yaml make smoke   # 400 rows -> 5 steps, T4 gate
-CONFIG=configs/qlora-tiny.yaml make data train eval
-CONFIG=configs/qlora-tiny.yaml make export  # f16 + Q4_K_M, both must load
+C=configs/qlora-tiny.yaml
+python -m cyberft.cli -c $C info    # verify GPU, dtype, resolved config
+python -m cyberft.cli -c $C data    # build corpus (400 rows + --smoke for the 5-step T4 gate)
+python -m cyberft.cli -c $C train   # full 1-epoch run (add --smoke for the T4 gate)
+python -m cyberft.cli -c $C eval    # per-row loss gate; exit 1 on any non-finite row
+python -m cyberft.cli -c $C export  # f16 + Q4_K_M, both must load
 ```
 
 Container (one image, sm_75 + sm_86; over 12 GB fails this pass):
 
 ```bash
 docker build -t ghcr.io/sourcepirate/falcon-h1-tiny:dev .
-docker run --gpus all ghcr.io/sourcepirate/falcon-h1-tiny:dev make smoke
-# RunPod 3090: pull ghcr.io/sourcepirate/falcon-h1-tiny:tiny, same make targets
+docker run --gpus all ghcr.io/sourcepirate/falcon-h1-tiny:dev python -m cyberft.cli -c configs/qlora-tiny.yaml train --smoke
+# RunPod 3090: pull ghcr.io/sourcepirate/falcon-h1-tiny:tiny, same CLI commands
 ```
 
 GGUF load check:
@@ -87,7 +89,7 @@ llama-cli -m outputs/gguf-tiny/model-q4_k_m.gguf -p "Write a tcpdump command for
 
 ## CLI
 
-No command requires a flag (`--config` defaults to `configs/qlora-3b.yaml`):
+No command requires a flag (`--config`, or `-c`, defaults to `configs/qlora-3b.yaml`):
 
 ```bash
 python -m cyberft.cli info      # gpu, dtype, resolved config, corpus stats
@@ -130,7 +132,7 @@ Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`
   `micro_batch: 1`, `max_len: 2048`. Raise `micro_batch` before `max_len`.
 - **Export RAM**: the CPU bf16 merge needs ~7 GB of host RAM.
 - **CI**: ruff, mypy and the CPU tests run on every push; the `image` job builds on PRs (no push) and pushes `:sha`/`:tiny`/`:latest` to GHCR on `main` pushes and `v*` tags. The GPU smoke test
-  stays manual (`make smoke`, or `CONFIG=configs/qlora-tiny.yaml make smoke` in the container).
+  stays manual (`python -m cyberft.cli -c configs/qlora-tiny.yaml train --smoke` in the container).
 
 ## Troubleshooting
 

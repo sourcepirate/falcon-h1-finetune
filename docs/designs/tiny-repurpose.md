@@ -3,7 +3,7 @@
 * **Author:** Sathya (sourcepirate/falcon-h1-finetune)
 * **Status:** Approved
 * **Date:** 2026-11-10
-* **Revision:** 2026-11-11 — GHCR decision incorporated (tags-only, public `ghcr.io/sourcepirate/falcon-h1-tiny`, owner-approved); two review rounds resolved (16 + 13 findings); Status Approved.
+* **Revision:** 2026-11-11 — GHCR decision incorporated (tags-only, public `ghcr.io/sourcepirate/falcon-h1-tiny`, owner-approved); two review rounds resolved (16 + 13 findings); Status Approved. 2026-11-14 amendment: production runs use `cyberft` CLI with `-c` directly, no `make` (Makefile retained for local dev).
 
 ---
 
