@@ -37,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_export = sub.add_parser("export", help="merge and export GGUF")
     common(p_export)
 
+    p_push = sub.add_parser("push", help="merge and upload the full model to the Hub")
+    common(p_push)
+
     p_info = sub.add_parser("info", help="config, hardware and corpus summary")
     common(p_info)
 

@@ -10,7 +10,7 @@ loaders -> fingerprinted Arrow cache -> single-precision Trainer
 ## Interface
 
 - `config.py`: `SourceConfig`, `ModelConfig` (`quant: 4bit|none` for QLoRA vs plain-LoRA base), `DataConfig`, `LoraConfig`, `TrainConfig` (`report_to` must not contain `"wandb"`), `ExportConfig` (`llama_cpp_rev` pin consumed by the clone step), `WandbConfig` (`enabled: auto|always|never`, env wins), `Config` (with `validate()`), `load_config(path)`, `warmup_steps(cfg, train_rows)`, `with_train(cfg, **changes)`, `with_data(cfg, **changes)`, `with_export(cfg, **changes)`, `with_wandb(cfg, **changes)`
-- `args.py`: `build_parser()` — subcommands `data/train/eval/export/info`; `train` takes `--wandb/--no-wandb`
+- `args.py`: `build_parser()` — subcommands `data/train/eval/export/push/info`; `train` takes `--wandb/--no-wandb`
 - `cli.py`: `run(args) -> int` (dispatches subcommands), `main(argv) -> int` (logging setup, `CyberftError` -> exit 1, `KeyboardInterrupt` -> 130)
 - `errors.py`: `CyberftError`, `ConfigError`, `NotBuiltError`, `DependencyError`, `TrackingError`, `NonFiniteLossError`
 - `loaders.py`: `LoaderBase`, `RedTeamLoader`, `KaliLoader`, `KimiLoader`, `CTILoader`, `ExploitDBLoader`, `LinuxCommandsLoader`, `DebianLoader`, `LOADERS`, `get_loader(name)`, `build_messages(cfg)`, `RenderSplitPipeline` (`run()`, `render_row()`, `tokenize_row()`), `render_and_split(cfg, tokenizer, dataset, eval_size)`, `build(cfg, tokenizer, smoke)`, `fingerprint(cfg, smoke)`, `content_hash(splits)`, `manifest(cfg, splits, smoke)`, `prepare_data(cfg, smoke, force, tokenizer)`, `data_manifest(cfg, smoke)`
@@ -18,8 +18,8 @@ loaders -> fingerprinted Arrow cache -> single-precision Trainer
 - `tracking.py`: `NullTracker`, `WandbTracker` (`log`, `summary`, `finish`, `enabled`), `resolve_enabled(conf, smoke, override, env)`, `metric_name(key)`, `clean_metrics(metrics)`, `final_summary(history, total_steps, global_step)`, `start(conf, smoke, override, process_index, run_config, env)`
 - `train.py`: `FiniteLossCallback`, `MetricsCallback` (after `FiniteLossCallback`), `expected_total_steps(cfg, train_rows, smoke)`, `train_dir(cfg, smoke)`, `load_splits(cfg, smoke)`, `build_args(cfg, train_rows, smoke)`, `train(cfg, smoke, *, wandb)`
 - `evaluate.py`: `RowLoss`, `EvalReport` (`worst()`, `summary()`, `assert_finite()`), `evaluate(cfg, adapter, split, smoke)`, `generate(cfg, prompts, adapter, smoke, max_new_tokens)`
-- `export.py`: `merge(cfg, adapter_dir)`, `convert(cfg, merged)`, `quantize(cfg, f16)`, `export_gguf(cfg, adapter, skip_merge)`
-- `__init__.py`: `__version__` (`0.5.0`), lazy `__getattr__` re-exports of Config/loaders/model/train/eval/export entry points
+- `export.py`: `merge(cfg, adapter_dir)`, `convert(cfg, merged)`, `quantize(cfg, f16)`, `export_gguf(cfg, adapter, skip_merge)`, `push(cfg, adapter)` (merges then uploads to `export.hf_repo` via `HF_TOKEN`)
+- `__init__.py`: `__version__` (`0.5.0`), lazy `__getattr__` re-exports of Config/loaders/model/train/eval/export entry points (incl. `push`)
 
 ## Invariants
 

@@ -45,6 +45,7 @@ _LAZY = {
     "generate": "evaluate",
     "EvalReport": "evaluate",
     "export_gguf": "export",
+    "push": "export",
 }
 
 __all__ = [

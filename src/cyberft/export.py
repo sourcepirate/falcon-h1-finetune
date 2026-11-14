@@ -15,11 +15,12 @@ import sys
 from pathlib import Path
 
 import torch
+from huggingface_hub import HfApi
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .config import Config
-from .errors import DependencyError, NotBuiltError
+from .errors import ConfigError, DependencyError, NotBuiltError
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +78,24 @@ def export_gguf(cfg: Config, *, adapter: str | Path | None = None, skip_merge: b
     else:
         merged = merge(cfg, adapter_dir)
     return quantize(cfg, convert(cfg, merged))
+
+
+def push(cfg: Config, *, adapter: str | Path | None = None) -> str:
+    """Merge the adapter and upload the full model to the Hub.
+
+    Train stays local-only; this is the only path that writes to the Hub.
+    Auth is the standard ``HF_TOKEN`` env (injected by Goggle when the image
+    sets ``needs_hf_token``). Creates the repo if missing.
+    """
+    if not cfg.export.hf_repo:
+        raise ConfigError("export.hf_repo is not set: set the Hub repo id to push the merged model to")
+    adapter_dir = Path(adapter) if adapter else Path(cfg.train.output_dir)
+    merged = merge(cfg, adapter_dir)
+    api = HfApi()
+    api.create_repo(cfg.export.hf_repo, exist_ok=True)
+    api.upload_folder(repo_id=cfg.export.hf_repo, folder_path=str(merged))
+    log.info("pushed %s to Hub repo %s", merged, cfg.export.hf_repo)
+    return cfg.export.hf_repo
 
 
 def _find_binary(cfg: Config, name: str) -> Path:

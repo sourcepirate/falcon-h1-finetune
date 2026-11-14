@@ -92,6 +92,7 @@ class ExportConfig:
     quant: str = "Q4_K_M"
     llama_cpp_dir: Path = Path("vendor/llama.cpp")
     llama_cpp_rev: str | None = None  # pin SHA consumed by the clone step (Dockerfile/CI), not by export.py
+    hf_repo: str | None = None  # Hub repo for `cyberft push` (merged model); None = no push
 
 
 WANDB_ENABLED = ("auto", "always", "never")
@@ -173,6 +174,8 @@ class Config:
                 raise ConfigError(f"train.{name} must be positive")
         if self.train.num_workers < 0:
             raise ConfigError("train.num_workers must be >= 0")
+        if self.export.hf_repo is not None and not self.export.hf_repo:
+            raise ConfigError("export.hf_repo must be non-empty when set")
 
         if self.wandb.enabled not in WANDB_ENABLED:
             raise ConfigError(f"wandb.enabled must be one of {WANDB_ENABLED}, got {self.wandb.enabled!r}")

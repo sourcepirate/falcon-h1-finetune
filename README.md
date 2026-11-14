@@ -70,6 +70,7 @@ python -m cyberft.cli -c $C data    # build corpus (400 rows + --smoke for the 5
 python -m cyberft.cli -c $C train   # full 1-epoch run (add --smoke for the T4 gate)
 python -m cyberft.cli -c $C eval    # per-row loss gate; exit 1 on any non-finite row
 python -m cyberft.cli -c $C export  # f16 + Q4_K_M, both must load
+python -m cyberft.cli -c $C push    # merge + upload full model to export.hf_repo (needs HF_TOKEN)
 ```
 
 Container (one image, sm_75 + sm_86; over 12 GB fails this pass):
@@ -98,6 +99,7 @@ python -m cyberft.cli data      # --smoke, --force
 python -m cyberft.cli train     # --smoke, --wandb/--no-wandb
 python -m cyberft.cli eval      # --smoke
 python -m cyberft.cli export
+python -m cyberft.cli push      # no flags; repo comes from export.hf_repo
 ```
 
 ## Library
@@ -120,6 +122,11 @@ report.assert_finite()                         # raises NonFiniteLossError, neve
 answers = generate(cfg, ["Write a tcpdump command for DNS only"], adapter=adapter)
 path = export_gguf(cfg, adapter=adapter)       # Path to the quantized GGUF
 ```
+
+Train stays local-only; `push` merges (CPU bf16, ~7GB RAM) and uploads the
+full model to `export.hf_repo`, creating the repo if missing. Auth is the
+standard `HF_TOKEN` env (Goggle injects it when the image sets
+`needs_hf_token`, already true in `image.contract.json`).
 
 Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`,
 `TrackingError`, `NonFiniteLossError`) — the library never parses arguments or calls `sys.exit`.
@@ -175,6 +182,8 @@ adapter saves.
 | `ConfigError: train.report_to must not contain "wandb"` | HF callback would finish before the adapter saves | use the `wandb:` section (enabled/project/entity/tags) instead |
 | `TrackingError: wandb.init failed` on Goggle | `inject_wandb` missing or token scope wrong | re-check the image contract flags and the project token |
 | `DependencyError: wandb tracking is enabled but ...` | `--wandb` without the client installed | `pip install -e ".[train]"` or pass `--no-wandb` |
+| `ConfigError: export.hf_repo is not set` | `push` with no repo configured | set `export.hf_repo` in YAML, e.g. `org/falcon-h1-tiny-cyber` |
+| `401` from the Hub on `push` | missing or wrong token | export `HF_TOKEN` with write access to the repo |
 
 ## Licence note
 

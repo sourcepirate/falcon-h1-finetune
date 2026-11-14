@@ -14,7 +14,7 @@ from .args import build_parser
 from .config import load_config
 from .errors import CyberftError
 from .evaluate import evaluate
-from .export import export_gguf
+from .export import export_gguf, push
 from .loaders import data_manifest, prepare_data
 from .model import amp_dtype
 from .train import train
@@ -45,6 +45,10 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "export":
         path = export_gguf(cfg)
         print(f"{path} ({path.stat().st_size / 1e9:.2f} GB)")
+        return 0
+
+    if args.command == "push":
+        print(push(cfg))
         return 0
 
     if args.command == "info":
