@@ -9,18 +9,21 @@ loaders -> fingerprinted Arrow cache -> single-precision Trainer
 
 ## Interface
 
-- `config.py`: `SourceConfig`, `ModelConfig` (`quant: 4bit|none` for QLoRA vs plain-LoRA base), `DataConfig`, `LoraConfig`, `TrainConfig`, `ExportConfig` (`llama_cpp_rev` pin consumed by the clone step), `Config` (with `validate()`), `load_config(path)`, `warmup_steps(cfg, train_rows)`, `with_train(cfg, **changes)`, `with_data(cfg, **changes)`, `with_export(cfg, **changes)`
-- `args.py`: `build_parser()` — subcommands `data/train/eval/export/info`
+- `config.py`: `SourceConfig`, `ModelConfig` (`quant: 4bit|none` for QLoRA vs plain-LoRA base), `DataConfig`, `LoraConfig`, `TrainConfig` (`report_to` must not contain `"wandb"`), `ExportConfig` (`llama_cpp_rev` pin consumed by the clone step), `WandbConfig` (`enabled: auto|always|never`, env wins), `Config` (with `validate()`), `load_config(path)`, `warmup_steps(cfg, train_rows)`, `with_train(cfg, **changes)`, `with_data(cfg, **changes)`, `with_export(cfg, **changes)`, `with_wandb(cfg, **changes)`
+- `args.py`: `build_parser()` — subcommands `data/train/eval/export/info`; `train` takes `--wandb/--no-wandb`
 - `cli.py`: `run(args) -> int` (dispatches subcommands), `main(argv) -> int` (logging setup, `CyberftError` -> exit 1, `KeyboardInterrupt` -> 130)
-- `errors.py`: `CyberftError`, `ConfigError`, `NotBuiltError`, `DependencyError`, `NonFiniteLossError`
+- `errors.py`: `CyberftError`, `ConfigError`, `NotBuiltError`, `DependencyError`, `TrackingError`, `NonFiniteLossError`
 - `loaders.py`: `LoaderBase`, `RedTeamLoader`, `KaliLoader`, `KimiLoader`, `CTILoader`, `ExploitDBLoader`, `LinuxCommandsLoader`, `DebianLoader`, `LOADERS`, `get_loader(name)`, `build_messages(cfg)`, `RenderSplitPipeline` (`run()`, `render_row()`, `tokenize_row()`), `render_and_split(cfg, tokenizer, dataset, eval_size)`, `build(cfg, tokenizer, smoke)`, `fingerprint(cfg, smoke)`, `content_hash(splits)`, `manifest(cfg, splits, smoke)`, `prepare_data(cfg, smoke, force, tokenizer)`, `data_manifest(cfg, smoke)`
 - `model.py`: `amp_dtype(cfg)`, `build_tokenizer(cfg)` (Tiny fallback template `TINY_FALLBACK_CHAT_TEMPLATE` when the Hub ships none), `build_model(cfg)` (plain base when `model.quant == "none"`), `attach_adapter(cfg, adapter_dir)`
-- `train.py`: `FiniteLossCallback`, `train_dir(cfg, smoke)`, `load_splits(cfg, smoke)`, `build_args(cfg, train_rows, smoke)`, `train(cfg, smoke)`
+- `tracking.py`: `NullTracker`, `WandbTracker` (`log`, `summary`, `finish`, `enabled`), `resolve_enabled(conf, smoke, override, env)`, `metric_name(key)`, `clean_metrics(metrics)`, `final_summary(history, total_steps, global_step)`, `start(conf, smoke, override, process_index, run_config, env)`
+- `train.py`: `FiniteLossCallback`, `MetricsCallback` (after `FiniteLossCallback`), `expected_total_steps(cfg, train_rows, smoke)`, `train_dir(cfg, smoke)`, `load_splits(cfg, smoke)`, `build_args(cfg, train_rows, smoke)`, `train(cfg, smoke, *, wandb)`
 - `evaluate.py`: `RowLoss`, `EvalReport` (`worst()`, `summary()`, `assert_finite()`), `evaluate(cfg, adapter, split, smoke)`, `generate(cfg, prompts, adapter, smoke, max_new_tokens)`
 - `export.py`: `merge(cfg, adapter_dir)`, `convert(cfg, merged)`, `quantize(cfg, f16)`, `export_gguf(cfg, adapter, skip_merge)`
-- `__init__.py`: `__version__` (`0.4.0`), lazy `__getattr__` re-exports of Config/loaders/model/train/eval/export entry points
+- `__init__.py`: `__version__` (`0.5.0`), lazy `__getattr__` re-exports of Config/loaders/model/train/eval/export entry points
 
 ## Invariants
+
+- `wandb.enabled` in `(auto, always, never)`; `wandb.mode` is None or in `(online, offline, disabled)`; `wandb.project/entity/run_name` non-empty when set; `wandb.tags` has no empty strings; `train.report_to` must not contain `"wandb"` (metrics go through `tracking.py`, not HF's callback).
 
 - `Config.validate`: `model.id` non-empty; `model.dtype` in `(auto, bf16, fp16)`; `model.quant` in `(4bit, none)`; `model.attn` in `(sdpa, flash_attention_2)`; missing `out_proj`/`lm_head` in `bnb_skip_modules` warns (not fails) — hard-fail history assumed Falcon-H1-3B's vocab 65537, but Tiny-R-90M has vocab 32768 with tied embeddings.
 - LoRA targets must be non-empty and must not intersect `{out_proj, conv1d}`; `lora.r` positive.
@@ -41,6 +44,7 @@ loaders -> fingerprinted Arrow cache -> single-precision Trainer
 ## Side Effects
 
 - Network: HuggingFace Hub fetch via `load_dataset` / `hf_hub_download` (`LoaderBase._load_ds`); `HfApi().dataset_info` per source for manifest revisions.
+- Network: `train` opens a wandb run when enabled (Goggle `WANDB_*` env); init failure raises `TrackingError`, post-init failures only warn.
 - Filesystem writes: `prepare_data` (`shutil.rmtree` + `save_to_disk` + `manifest.json` under `data.output_dir/{full,smoke}`); `train` writes adapter + tokenizer via `save_pretrained`; `merge` writes merged safetensors + tokenizer to `export.merged_dir` (CPU bf16 load, ~7GB RAM); `convert`/`quantize` run `llama.cpp` subprocesses into `gguf_dir`.
 - Filesystem reads: Arrow cache hit via `load_from_disk`; checkpoint resume via `get_last_checkpoint`.
 - Compute: GPU-heavy 4-bit QLoRA training via `transformers` Trainer; `evaluate` runs per-row forward passes under `torch.no_grad`.

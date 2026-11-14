@@ -93,3 +93,11 @@ export:
   quant: Q4_K_M
   llama_cpp_dir: vendor/llama.cpp
   llama_cpp_rev: null  # TODO(implementer, before-export): pin SHA under test
+
+wandb:
+  enabled: auto       # auto: on with WANDB_API_KEY or WANDB_MODE=online/offline, off in smoke | always | never
+  project: falcon-h1-cyber   # WANDB_PROJECT (injected by Goggle) wins when set
+  entity: null        # WANDB_ENTITY (injected by Goggle) wins when set
+  run_name: null
+  tags: [qlora, falcon-h1-tiny, cyber]
+  mode: null          # None -> WANDB_MODE; online | offline | disabled

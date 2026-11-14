@@ -19,6 +19,9 @@ class DependencyError(CyberftError, RuntimeError):
     """A runtime dependency or hardware feature is unavailable."""
 
 
+class TrackingError(CyberftError, RuntimeError):
+    """The metrics backend (wandb/Goggle) could not be initialised."""
+
 
 class NonFiniteLossError(CyberftError, RuntimeError):
     """Training or evaluation produced a NaN/inf loss."""

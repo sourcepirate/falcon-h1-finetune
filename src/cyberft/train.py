@@ -16,6 +16,7 @@ from .config import Config, warmup_steps
 from .errors import NonFiniteLossError
 from .loaders import prepare_data
 from .model import build_model, build_tokenizer
+from .tracking import NullTracker, WandbTracker, clean_metrics, final_summary, metric_name, start
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +42,75 @@ class FiniteLossCallback(TrainerCallback):
                     "stopping instead of saving a poisoned adapter. "
                     "Lower train.lr or shorten data.max_len."
                 )
+
+
+class MetricsCallback(TrainerCallback):
+    """Mirror Trainer logs to wandb/Goggle with goggle-style metric names.
+
+    Registered *after* :class:`FiniteLossCallback` so a non-finite loss
+    aborts before it is ever logged. Post-init tracker failures only warn
+    (see :mod:`cyberft.tracking`) and never abort training.
+    """
+
+    def __init__(self, tracker: NullTracker | WandbTracker, total_steps: int | None = None) -> None:
+        self._tracker = tracker
+        self._total_steps = total_steps
+
+    def on_train_begin(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        if self._total_steps is not None:
+            self._tracker.summary({"_total_steps": self._total_steps})
+
+    def on_log(self, args: Any, state: Any, control: Any,
+               logs: dict[str, float] | None = None, **kwargs: Any) -> None:
+        if not logs:
+            return
+        cleaned = clean_metrics({metric_name(key): value for key, value in logs.items()})
+        if cleaned:
+            self._tracker.log(cleaned, step=state.global_step)
+
+    def on_train_end(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        history = list(getattr(state, "log_history", None) or [])
+        self._tracker.summary(
+            final_summary(history, total_steps=self._total_steps, global_step=state.global_step)
+        )
+
+
+def expected_total_steps(cfg: Config, train_rows: int, smoke: bool) -> int:
+    """Planned optimizer steps, for the Goggle progress bar.
+
+    ``train.max_steps`` is ``-1`` for full-epoch runs, so the image contract
+    leaves ``total_steps_path`` blank and the UI reads ``_total_steps``
+    from the run summary instead.
+    """
+    if smoke:
+        return SMOKE_STEPS
+    if cfg.train.max_steps > 0:
+        return cfg.train.max_steps
+    per_epoch = max(1, math.ceil(train_rows / (cfg.train.micro_batch * cfg.train.grad_accum)))
+    return max(1, int(per_epoch * cfg.train.epochs))
+
+
+def _run_config(cfg: Config, smoke: bool) -> dict[str, Any]:
+    """Flat JSON-primitive run config for ``wandb.init(config=...)``."""
+    return {
+        "model": cfg.model.id,
+        "dtype": cfg.model.dtype,
+        "quant": cfg.model.quant,
+        "attn": cfg.model.attn,
+        "data/max_len": cfg.data.max_len,
+        "data/eval_max_len": cfg.data.eval_max_len,
+        "data/eval_size": cfg.data.eval_size,
+        "seed": cfg.data.seed,
+        "lora/r": cfg.lora.r,
+        "lora/alpha": cfg.lora.alpha,
+        "lora/dropout": cfg.lora.dropout,
+        "train/lr": cfg.train.lr,
+        "train/epochs": cfg.train.epochs,
+        "train/max_steps": cfg.train.max_steps,
+        "train/micro_batch": cfg.train.micro_batch,
+        "train/grad_accum": cfg.train.grad_accum,
+        "smoke": smoke,
+    }
 
 
 def train_dir(cfg: Config, smoke: bool = False) -> Path:
@@ -92,7 +162,7 @@ def build_args(cfg: Config, train_rows: int, smoke: bool) -> TrainingArguments:
     )
 
 
-def train(cfg: Config, smoke: bool = False) -> Trainer:
+def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None) -> Trainer:
     tokenizer = build_tokenizer(cfg)
     splits = load_splits(cfg, smoke)
     if smoke:
@@ -103,13 +173,22 @@ def train(cfg: Config, smoke: bool = False) -> Trainer:
 
     model = build_model(cfg)
     args = build_args(cfg, len(splits["train"]), smoke)
+    tracker = start(
+        cfg.wandb,
+        smoke=smoke,
+        override=wandb,
+        process_index=args.process_index,
+        run_config=_run_config(cfg, smoke),
+    )
+    tracker.summary({"data/train_rows": len(splits["train"]), "data/eval_rows": len(splits["eval"])})
+    total_steps = expected_total_steps(cfg, len(splits["train"]), smoke)
     trainer = Trainer(
         model=model,
         args=args,
         train_dataset=splits["train"],
         eval_dataset=splits["eval"],
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
-        callbacks=[FiniteLossCallback()],
+        callbacks=[FiniteLossCallback(), MetricsCallback(tracker, total_steps)],
     )
 
     resume = None
@@ -121,10 +200,18 @@ def train(cfg: Config, smoke: bool = False) -> Trainer:
         if resume:
             log.info("resuming from %s", resume)
 
-    trainer.train(resume_from_checkpoint=resume)
+    # Only a run that reaches the adapter save counts as success: wandb.finish
+    # maps exit_code 0 to `completed`, anything else to failed. The finally
+    # block reports, it never masks the training outcome.
+    exit_code = 1
+    try:
+        trainer.train(resume_from_checkpoint=resume)
 
-    out_dir = train_dir(cfg, smoke)
-    model.save_pretrained(str(out_dir))
-    tokenizer.save_pretrained(str(out_dir))
-    log.info("adapter + tokenizer saved to %s", out_dir)
-    return trainer
+        out_dir = train_dir(cfg, smoke)
+        model.save_pretrained(str(out_dir))
+        tokenizer.save_pretrained(str(out_dir))
+        log.info("adapter + tokenizer saved to %s", out_dir)
+        exit_code = 0
+        return trainer
+    finally:
+        tracker.finish(exit_code=exit_code)

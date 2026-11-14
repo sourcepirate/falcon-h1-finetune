@@ -34,7 +34,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "train":
-        train(cfg, smoke=args.smoke)
+        train(cfg, smoke=args.smoke, wandb=args.wandb)
         return 0
 
     if args.command == "eval":

@@ -94,6 +94,23 @@ class ExportConfig:
     llama_cpp_rev: str | None = None  # pin SHA consumed by the clone step (Dockerfile/CI), not by export.py
 
 
+WANDB_ENABLED = ("auto", "always", "never")
+WANDB_MODES = ("online", "offline", "disabled")
+
+
+@dataclass(frozen=True)
+class WandbConfig:
+    """Where training metrics go. Env wins: WANDB_PROJECT/ENTITY/RUN_ID/MODE
+    injected by Goggle override project/entity/run binding without editing YAML."""
+
+    enabled: str = "auto"  # auto: on with a key or explicit mode, off in smoke | always | never
+    project: str | None = None
+    entity: str | None = None
+    run_name: str | None = None
+    tags: tuple[str, ...] = ()
+    mode: str | None = None  # None -> WANDB_MODE; online | offline | disabled
+
+
 @dataclass(frozen=True)
 class Config:
     model: ModelConfig
@@ -101,6 +118,7 @@ class Config:
     lora: LoraConfig = field(default_factory=LoraConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
+    wandb: WandbConfig = field(default_factory=WandbConfig)
 
     def validate(self) -> Config:
         if not self.model.id:
@@ -155,6 +173,24 @@ class Config:
                 raise ConfigError(f"train.{name} must be positive")
         if self.train.num_workers < 0:
             raise ConfigError("train.num_workers must be >= 0")
+
+        if self.wandb.enabled not in WANDB_ENABLED:
+            raise ConfigError(f"wandb.enabled must be one of {WANDB_ENABLED}, got {self.wandb.enabled!r}")
+        if self.wandb.mode is not None and self.wandb.mode not in WANDB_MODES:
+            raise ConfigError(f"wandb.mode must be one of {WANDB_MODES}, got {self.wandb.mode!r}")
+        for name in ("project", "entity", "run_name"):
+            value = getattr(self.wandb, name)
+            if value is not None and not value:
+                raise ConfigError(f"wandb.{name} must be non-empty when set")
+        if any(not tag for tag in self.wandb.tags):
+            raise ConfigError("wandb.tags must not contain empty strings")
+        # HF's built-in wandb callback inits its own run and finishes before the
+        # adapter is saved; metrics go through tracking.py instead.
+        if "wandb" in self.train.report_to:
+            raise ConfigError(
+                'train.report_to must not contain "wandb": set the wandb section '
+                "(enabled/project/entity/tags) instead"
+            )
         return self
 
     def _validate_sources(self) -> None:
@@ -210,7 +246,7 @@ def load_config(path: str | Path) -> Config:
     if not isinstance(raw, dict) or "model" not in raw:
         raise ConfigError(f"{path}: expected a mapping with a 'model' section")
 
-    known = {"model", "data", "lora", "train", "export"}
+    known = {"model", "data", "lora", "train", "export", "wandb"}
     if set(raw) - known:
         raise ConfigError(f"{path}: unknown section(s) {sorted(set(raw) - known)}")
 
@@ -220,6 +256,7 @@ def load_config(path: str | Path) -> Config:
         lora=_build(LoraConfig, raw.get("lora"), "lora"),
         train=_build(TrainConfig, raw.get("train"), "train"),
         export=_build(ExportConfig, raw.get("export"), "export"),
+        wandb=_build(WandbConfig, raw.get("wandb"), "wandb"),
     )
     return cfg.validate()
 
@@ -250,3 +287,8 @@ def with_data(cfg: Config, **changes: Any) -> Config:
 def with_export(cfg: Config, **changes: Any) -> Config:
     """Return a validated copy of ``cfg`` with ``ExportConfig`` fields replaced."""
     return dataclasses.replace(cfg, export=dataclasses.replace(cfg.export, **changes)).validate()
+
+
+def with_wandb(cfg: Config, **changes: Any) -> Config:
+    """Return a validated copy of ``cfg`` with ``WandbConfig`` fields replaced."""
+    return dataclasses.replace(cfg, wandb=dataclasses.replace(cfg.wandb, **changes)).validate()

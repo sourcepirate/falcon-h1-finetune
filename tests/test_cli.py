@@ -1,4 +1,4 @@
-"""The CLI surface must stay minimal: --config (-c) everywhere, --smoke/--force only."""
+"""The CLI surface must stay minimal: --config (-c) everywhere, --smoke/--force/--wandb only."""
 
 import sys
 from pathlib import Path
@@ -18,7 +18,7 @@ def test_cli_surface_is_minimal():
                 actions[name] = sorted(a.dest for a in sub._actions if a.dest != "help")
     assert actions == {
         "data": ["config", "force", "smoke"],
-        "train": ["config", "smoke"],
+        "train": ["config", "smoke", "wandb"],
         "eval": ["config", "smoke"],
         "export": ["config"],
         "info": ["config"],

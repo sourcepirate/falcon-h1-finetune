@@ -1,0 +1,24 @@
+{
+    "name": "falcon-h1-tiny-cyber",
+    "image": "ghcr.io/sourcepirate/falcon-h1-tiny:tiny",
+    "command": "train -c {config_path} --wandb",
+    "description": "Falcon-H1-Tiny-R-90M QLoRA on cyber-security data, reporting via the stock wandb client.",
+    "needs_config": true,
+    "config_path": "/config/job.yaml",
+    "needs_token": true,
+    "inject_wandb": true,
+    "needs_hf_token": true,
+    "config_preview_fields": [
+        {"label": "model", "path": "model.id"},
+        {"label": "quant", "path": "model.quant"},
+        {"label": "max_len", "path": "data.max_len"},
+        {"label": "rank", "path": "lora.r"},
+        {"label": "lr", "path": "train.lr"},
+        {"label": "epochs", "path": "train.epochs"},
+        {"label": "out_dir", "path": "train.output_dir"}
+    ],
+    "featured_metrics": ["train/loss", "train/lr"],
+    "total_steps_path": "",
+    "checkpoint_globs": ["*.safetensors", "checkpoint-*/*.safetensors"],
+    "heartbeat_timeout_seconds": 900
+}

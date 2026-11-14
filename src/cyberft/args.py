@@ -21,6 +21,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_train = sub.add_parser("train", help="fine-tune the adapter")
     common(p_train)
     p_train.add_argument("--smoke", action="store_true")
+    p_train.add_argument(
+        "--wandb",
+        "--no-wandb",
+        dest="wandb",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="force wandb/Goggle tracking on or off (default: auto from config + env)",
+    )
 
     p_eval = sub.add_parser("eval", help="per-row evaluation of the trained adapter")
     common(p_eval)

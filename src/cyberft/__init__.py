@@ -22,9 +22,10 @@ from .errors import (
     DependencyError,
     NonFiniteLossError,
     NotBuiltError,
+    TrackingError,
 )
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 # public name -> module defining it
 _LAZY = {
@@ -33,6 +34,7 @@ _LAZY = {
     "with_train": "config",
     "with_data": "config",
     "with_export": "config",
+    "with_wandb": "config",
     "amp_dtype": "model",
     "build_tokenizer": "model",
     "prepare_data": "loaders",
@@ -53,6 +55,7 @@ __all__ = [
     "DependencyError",
     "NonFiniteLossError",
     "NotBuiltError",
+    "TrackingError",
 ]
 
 
