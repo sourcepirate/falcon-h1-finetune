@@ -96,7 +96,7 @@ No command requires a flag (`--config`, or `-c`, defaults to `configs/qlora-3b.y
 ```bash
 python -m cyberft.cli info      # gpu, dtype, resolved config, corpus stats
 python -m cyberft.cli data      # --smoke, --force
-python -m cyberft.cli train     # --smoke, --wandb/--no-wandb
+python -m cyberft.cli train     # --smoke, --wandb/--no-wandb, --push/--no-push
 python -m cyberft.cli eval      # --smoke
 python -m cyberft.cli export
 python -m cyberft.cli push      # no flags; repo comes from export.hf_repo
@@ -140,6 +140,7 @@ stock `wandb` client (`wandb>=0.31,<0.32`): history `train/loss`, `train/lr`,
 full-epoch runs), `train/steps`, `train/final_loss`, `eval/final_loss`.
 
 ```bash
+python -m cyberft.cli -c configs/qlora-tiny.yaml train --wandb --push  # single command: train, report, merge, upload
 python -m cyberft.cli -c configs/qlora-tiny.yaml train --wandb   # force on (needs key or WANDB_MODE)
 python -m cyberft.cli -c configs/qlora-tiny.yaml train --no-wandb # force off
 WANDB_MODE=offline python -m cyberft.cli -c configs/qlora-tiny.yaml train --smoke --wandb  # local, no network

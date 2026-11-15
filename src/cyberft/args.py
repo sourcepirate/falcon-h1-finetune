@@ -29,6 +29,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="force wandb/Goggle tracking on or off (default: auto from config + env)",
     )
+    p_train.add_argument(
+        "--push",
+        "--no-push",
+        dest="push",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="force Hub push on or off (default: push when export.hf_repo is set, never in smoke)",
+    )
 
     p_eval = sub.add_parser("eval", help="per-row evaluation of the trained adapter")
     common(p_eval)

@@ -13,7 +13,8 @@ from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import get_last_checkpoint
 
 from .config import Config, warmup_steps
-from .errors import NonFiniteLossError
+from .errors import ConfigError, NonFiniteLossError
+from .export import push as push_model
 from .loaders import prepare_data
 from .model import build_model, build_tokenizer
 from .tracking import NullTracker, WandbTracker, clean_metrics, final_summary, metric_name, start
@@ -162,7 +163,16 @@ def build_args(cfg: Config, train_rows: int, smoke: bool) -> TrainingArguments:
     )
 
 
-def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None) -> Trainer:
+def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None,
+         push: bool | None = None) -> Trainer:
+    if smoke and push:
+        raise ConfigError("--push with --smoke is refused: smoke trains on a 64-row slice")
+    # Auto-push when the YAML names a Hub repo (never in smoke); explicit
+    # --push/--no-push wins. train is still the only writer: `cyberft push`
+    # reuses the same merge+upload for already-trained adapters.
+    do_push = push if push is not None else (cfg.export.hf_repo is not None and not smoke)
+    if do_push and not cfg.export.hf_repo:
+        raise ConfigError("--push given but export.hf_repo is not set")
     tokenizer = build_tokenizer(cfg)
     splits = load_splits(cfg, smoke)
     if smoke:
@@ -201,7 +211,9 @@ def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None) -> Tra
             log.info("resuming from %s", resume)
 
     # Only a run that reaches the adapter save counts as success: wandb.finish
-    # maps exit_code 0 to `completed`, anything else to failed. The finally
+    # maps exit_code 0 to `completed`, anything else to failed. Push runs
+    # before the success mark, so a failed upload fails the run instead of
+    # reporting `completed` for a model that never reached the Hub. The finally
     # block reports, it never masks the training outcome.
     exit_code = 1
     try:
@@ -211,6 +223,8 @@ def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None) -> Tra
         model.save_pretrained(str(out_dir))
         tokenizer.save_pretrained(str(out_dir))
         log.info("adapter + tokenizer saved to %s", out_dir)
+        if do_push:
+            push_model(cfg)
         exit_code = 0
         return trainer
     finally:
