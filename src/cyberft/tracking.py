@@ -232,8 +232,8 @@ def start(
         import wandb
     except ImportError as exc:
         raise DependencyError(
-            f"wandb tracking is enabled but {WANDB_RANGE} is not installed; "
-            "install the train extra or pass --no-wandb"
+            f"wandb tracking is enabled but {WANDB_RANGE} is not importable ({exc}); "
+            "install the train extra (check dependency conflicts) or pass --no-wandb"
         ) from exc
 
     project = source.get("WANDB_PROJECT") or conf.project

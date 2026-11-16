@@ -40,7 +40,11 @@ RUN pip install --no-cache-dir -r requirements-fast.txt --no-build-isolation \
 # Conversion deps only: llama.cpp's requirements file pins transformers==4.57.6,
 # which cannot load this tokenizer (tokenizer_class=TokenizersBackend, a 5.x
 # class) and would downgrade the 5.20.2 runtime, so it is deliberately not used.
-RUN pip install --no-cache-dir "sentencepiece>=0.1.98,<0.3.0" "protobuf>=4.21,<5"
+# protobuf must stay >=5: wandb 0.31 requires it, and conversion works with 5.x.
+RUN pip install --no-cache-dir "sentencepiece>=0.1.98,<0.3.0" "protobuf>=5,<8"
+
+# Fail the build, not the job, if a later pin breaks the metrics client.
+RUN python -c "import wandb; print('wandb', wandb.__version__)"
 
 
 FROM runtime AS llama-builder
