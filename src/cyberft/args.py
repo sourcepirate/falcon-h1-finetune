@@ -45,8 +45,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_export = sub.add_parser("export", help="merge and export GGUF")
     common(p_export)
 
-    p_push = sub.add_parser("push", help="merge and upload the full model to the Hub")
+    p_push = sub.add_parser("push", help="merge, build a model card + GGUF, and upload to the Hub")
     common(p_push)
+    source = p_push.add_mutually_exclusive_group()
+    source.add_argument(
+        "--from-hub", action="store_true",
+        help="repair an existing Hub repo: rebuild card + GGUF from its published weights",
+    )
+    source.add_argument(
+        "--skip-merge", action="store_true",
+        help="reuse export.merged_dir instead of merging the adapter again",
+    )
 
     p_info = sub.add_parser("info", help="config, hardware and corpus summary")
     common(p_info)

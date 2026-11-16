@@ -153,7 +153,8 @@ def test_tiny_config_is_valid_and_matches_3b_sources():
     assert [s.name for s in tiny.data.sources] == [s.name for s in full.data.sources]
     assert len(tiny.data.sources) == 7
     assert tiny.data.eval_max_len <= tiny.data.max_len
-    assert tiny.export.llama_cpp_rev is None
+    # llama.cpp is pinned for GGUF conversion; the legacy 3B configs stay unpinned.
+    assert isinstance(tiny.export.llama_cpp_rev, str) and len(tiny.export.llama_cpp_rev) == 40
 
 
 def test_bad_quant_is_rejected(tmp_path):

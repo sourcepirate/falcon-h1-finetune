@@ -25,7 +25,7 @@ from .errors import (
     TrackingError,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 # public name -> module defining it
 _LAZY = {
@@ -45,7 +45,7 @@ _LAZY = {
     "generate": "evaluate",
     "EvalReport": "evaluate",
     "export_gguf": "export",
-    "push": "export",
+    "push": "hub",
 }
 
 __all__ = [

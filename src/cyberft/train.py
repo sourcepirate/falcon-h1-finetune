@@ -14,7 +14,7 @@ from transformers.trainer_utils import get_last_checkpoint
 
 from .config import Config, warmup_steps
 from .errors import ConfigError, NonFiniteLossError
-from .export import push as push_model
+from .hub import push as push_model
 from .loaders import prepare_data
 from .model import build_model, build_tokenizer
 from .tracking import NullTracker, WandbTracker, clean_metrics, final_summary, metric_name, start

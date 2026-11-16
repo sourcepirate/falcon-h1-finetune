@@ -69,8 +69,8 @@ python -m cyberft.cli -c $C info    # verify GPU, dtype, resolved config
 python -m cyberft.cli -c $C data    # build corpus (400 rows + --smoke for the 5-step T4 gate)
 python -m cyberft.cli -c $C train   # full 1-epoch run (add --smoke for the T4 gate)
 python -m cyberft.cli -c $C eval    # per-row loss gate; exit 1 on any non-finite row
-python -m cyberft.cli -c $C export  # f16 + Q4_K_M, both must load
-python -m cyberft.cli -c $C push    # merge + upload full model to export.hf_repo (needs HF_TOKEN)
+python -m cyberft.cli -c $C export  # GGUF for export.quant (Q8_0 is written directly)
+python -m cyberft.cli -c $C push    # merge + card + GGUF -> export.hf_repo (needs HF_TOKEN)
 ```
 
 Container (one image, sm_75 + sm_86; over 12 GB fails this pass):
@@ -82,11 +82,12 @@ docker run --gpus all ghcr.io/sourcepirate/falcon-h1-tiny:dev train -c configs/q
 # Goggle: register image.contract.json, submit a run; metrics stream via wandb
 ```
 
-GGUF load check:
+GGUF load check (file name tracks `export.quant`):
 
 ```bash
-llama-cli -m outputs/gguf-tiny/model-f16.gguf -p "Write a tcpdump command for DNS only" --n-predict 64
-llama-cli -m outputs/gguf-tiny/model-q4_k_m.gguf -p "Write a tcpdump command for DNS only" --n-predict 64
+llama-cli -m outputs/gguf-tiny/model-q8_0.gguf -p "Write a tcpdump command for DNS only" --n-predict 64
+# k-quants (e.g. Q4_K_M) additionally need a built llama-quantize; f16/bf16/q8_0
+# are written by convert_hf_to_gguf.py alone.
 ```
 
 ## CLI
@@ -99,7 +100,9 @@ python -m cyberft.cli data      # --smoke, --force
 python -m cyberft.cli train     # --smoke, --wandb/--no-wandb, --push/--no-push
 python -m cyberft.cli eval      # --smoke
 python -m cyberft.cli export
-python -m cyberft.cli push      # no flags; repo comes from export.hf_repo
+python -m cyberft.cli push      # card + GGUF + weights -> export.hf_repo
+python -m cyberft.cli push --from-hub   # repair an existing repo without retraining
+python -m cyberft.cli push --skip-merge # reuse export.merged_dir
 ```
 
 ## Library
@@ -123,10 +126,17 @@ answers = generate(cfg, ["Write a tcpdump command for DNS only"], adapter=adapte
 path = export_gguf(cfg, adapter=adapter)       # Path to the quantized GGUF
 ```
 
-Train stays local-only; `push` merges (CPU bf16, ~7GB RAM) and uploads the
-full model to `export.hf_repo`, creating the repo if missing. Auth is the
-standard `HF_TOKEN` env (Goggle injects it when the image sets
-`needs_hf_token`, already true in `image.contract.json`).
+`push` publishes a complete repository, not just weights: the merged model,
+a generated model card (`README.md` with `base_model`, licence, datasets and
+usage), `training_config.json`, and the configured GGUF (`model-q8_0.gguf`).
+It verifies the files landed remotely and fails otherwise. Merging runs on CPU
+in bf16 (~7GB RAM). Auth is the standard `HF_TOKEN` env (Goggle injects it when
+the image sets `needs_hf_token`, already true in `image.contract.json`).
+
+`push --from-hub` repairs a repo uploaded before the card/GGUF existed: it
+downloads the published weights, rebuilds the card and GGUF, and uploads only
+those three files. `push --skip-merge` reuses `export.merged_dir` when the
+adapter is gone but the merged weights are still local.
 
 Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`,
 `TrackingError`, `NonFiniteLossError`) — the library never parses arguments or calls `sys.exit`.
@@ -185,6 +195,8 @@ adapter saves.
 | `DependencyError: wandb tracking is enabled but ...` | `--wandb` without the client installed | `pip install -e ".[train]"` or pass `--no-wandb` |
 | `ConfigError: export.hf_repo is not set` | `push` with no repo configured | set `export.hf_repo` in YAML, e.g. `org/falcon-h1-tiny-cyber` |
 | `401` from the Hub on `push` | missing or wrong token | export `HF_TOKEN` with write access to the repo |
+| `DependencyError: convert_hf_to_gguf.py not found` | llama.cpp absent outside the image | clone it to `export.llama_cpp_dir` (the image ships it) |
+| `push ... incomplete, missing [...]` | upload did not land (token/scope/network) | fix access and rerun; push never reports a partial repo as success |
 
 ## Licence note
 

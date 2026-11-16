@@ -14,7 +14,8 @@ from .args import build_parser
 from .config import load_config
 from .errors import CyberftError
 from .evaluate import evaluate
-from .export import export_gguf, push
+from .export import export_gguf
+from .hub import push
 from .loaders import data_manifest, prepare_data
 from .model import amp_dtype
 from .train import train
@@ -48,7 +49,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "push":
-        print(push(cfg))
+        print(push(cfg, from_hub=args.from_hub, skip_merge=args.skip_merge))
         return 0
 
     if args.command == "info":

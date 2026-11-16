@@ -72,15 +72,15 @@ train:
   micro_batch: 1
   grad_accum: 8
   epochs: 1
-  max_steps: -1      # -1 = full epochs; set >0 in YAML for probes
+  max_steps: 100      # -1 = full epochs; set >0 in YAML for probes
   lr: 2.0e-4         # fallback 1.0e-4 if the probe NaNs
   warmup_ratio: 0.03
   max_grad_norm: 1.0
   optim: paged_adamw_8bit
   gradient_checkpointing: true
   logging_steps: 10
-  save_steps: 500
-  eval_steps: 500
+  save_steps: 20
+  eval_steps: 20
   save_total_limit: 2
   report_to: []        # e.g. ["tensorboard"]
   num_workers: 2
@@ -90,9 +90,9 @@ train:
 export:
   merged_dir: outputs/falcon-h1-tiny-merged
   gguf_dir: outputs/gguf-tiny
-  quant: Q4_K_M
+  quant: Q8_0
   llama_cpp_dir: vendor/llama.cpp
-  llama_cpp_rev: null  # TODO(implementer, before-export): pin SHA under test
+  llama_cpp_rev: 9fba51d2c9a1b5cb5f0c47986c031334e2d7663a  # pin; keep in sync with the Dockerfile LLAMA_CPP_REV
   hf_repo:  sourcepirate/falcon-h1-tiny-cyber      # set to push the merged model, e.g. org/falcon-h1-tiny-cyber
 
 wandb:

@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e . --no-deps && pip install -r requirements-dev.txt PyYAML 'datasets>=3'
+      - run: pip install -e . --no-deps && pip install -r requirements-dev.txt PyYAML 'datasets>=3' 'huggingface-hub>=1.31,<3'
       - name: lint
         run: ruff check .
       - name: tests (GPU tests skip themselves)

@@ -5,24 +5,31 @@ is how you end up publishing a directory that contains only the F16 intermediate
 
 The merge runs on CPU in bf16 and needs roughly 7 GB of host RAM, so it works on any
 machine that can hold the full-precision weights.
+
+``convert_hf_to_gguf.py`` can emit ``f32``, ``f16``, ``bf16`` and ``q8_0`` directly, so
+those quantizations need no ``llama-quantize`` binary; k-quants (``Q4_K_M`` and friends)
+still go through the compiled quantizer.
 """
 
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import torch
-from huggingface_hub import HfApi
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .config import Config
-from .errors import ConfigError, DependencyError, NotBuiltError
+from .errors import DependencyError, NotBuiltError
 
 log = logging.getLogger(__name__)
+
+# Outtypes convert_hf_to_gguf.py writes itself (no llama-quantize needed).
+DIRECT_OUTTYPES = ("f32", "f16", "bf16", "q8_0")
 
 
 def merge(cfg: Config, adapter_dir: Path) -> Path:
@@ -41,20 +48,23 @@ def merge(cfg: Config, adapter_dir: Path) -> Path:
     return merged
 
 
-def convert(cfg: Config, merged: Path) -> Path:
+def convert(cfg: Config, merged: Path, outtype: str = "f16") -> Path:
+    if outtype not in DIRECT_OUTTYPES:
+        raise DependencyError(f"convert_hf_to_gguf.py cannot write {outtype!r}; use f16 then quantize")
     script = Path(cfg.export.llama_cpp_dir) / "convert_hf_to_gguf.py"
     if not script.exists():
         raise DependencyError(f"{script} not found: clone llama.cpp into {cfg.export.llama_cpp_dir}")
 
     gguf_dir = Path(cfg.export.gguf_dir)
     gguf_dir.mkdir(parents=True, exist_ok=True)
-    out = gguf_dir / "model-f16.gguf"
+    out = gguf_dir / f"model-{outtype}.gguf"
     subprocess.run(
-        [sys.executable, str(script), str(merged), "--outfile", str(out), "--outtype", "f16"],
+        [sys.executable, str(script), str(merged), "--outfile", str(out), "--outtype", outtype],
         check=True,
     )
     if not out.exists():
         raise RuntimeError(f"conversion produced no file at {out}")
+    log.info("converted GGUF: %s (%.2f GB)", out, out.stat().st_size / 1e9)
     return out
 
 
@@ -68,6 +78,14 @@ def quantize(cfg: Config, f16: Path) -> Path:
     return out
 
 
+def build_gguf(cfg: Config, merged: Path) -> Path:
+    """Return the configured quantization of an already-merged model directory."""
+    quant = cfg.export.quant.lower()
+    if quant in DIRECT_OUTTYPES:
+        return convert(cfg, merged, outtype=quant)
+    return quantize(cfg, convert(cfg, merged, outtype="f16"))
+
+
 def export_gguf(cfg: Config, *, adapter: str | Path | None = None, skip_merge: bool = False) -> Path:
     """Merge (unless cached) and return the quantized GGUF path."""
     adapter_dir = Path(adapter) if adapter else Path(cfg.train.output_dir)
@@ -77,25 +95,7 @@ def export_gguf(cfg: Config, *, adapter: str | Path | None = None, skip_merge: b
             raise NotBuiltError(f"skip_merge=True given but {merged} does not exist")
     else:
         merged = merge(cfg, adapter_dir)
-    return quantize(cfg, convert(cfg, merged))
-
-
-def push(cfg: Config, *, adapter: str | Path | None = None) -> str:
-    """Merge the adapter and upload the full model to the Hub.
-
-    Train stays local-only; this is the only path that writes to the Hub.
-    Auth is the standard ``HF_TOKEN`` env (injected by Goggle when the image
-    sets ``needs_hf_token``). Creates the repo if missing.
-    """
-    if not cfg.export.hf_repo:
-        raise ConfigError("export.hf_repo is not set: set the Hub repo id to push the merged model to")
-    adapter_dir = Path(adapter) if adapter else Path(cfg.train.output_dir)
-    merged = merge(cfg, adapter_dir)
-    api = HfApi()
-    api.create_repo(cfg.export.hf_repo, exist_ok=True)
-    api.upload_folder(repo_id=cfg.export.hf_repo, folder_path=str(merged))
-    log.info("pushed %s to Hub repo %s", merged, cfg.export.hf_repo)
-    return cfg.export.hf_repo
+    return build_gguf(cfg, merged)
 
 
 def _find_binary(cfg: Config, name: str) -> Path:
@@ -104,6 +104,10 @@ def _find_binary(cfg: Config, name: str) -> Path:
         if candidate.exists():
             return candidate
     found = next(root.rglob(name), None)
-    if found is None:
-        raise DependencyError(f"{name} not found under {root}: build llama.cpp first")
-    return found
+    if found is not None:
+        return found
+    # Images copy the built binary onto PATH to keep the llama.cpp tree small.
+    on_path = shutil.which(name)
+    if on_path is not None:
+        return Path(on_path)
+    raise DependencyError(f"{name} not found under {root} or on PATH: build llama.cpp first")

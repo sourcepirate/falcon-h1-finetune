@@ -21,6 +21,6 @@ def test_cli_surface_is_minimal():
         "train": ["config", "push", "smoke", "wandb"],
         "eval": ["config", "smoke"],
         "export": ["config"],
-        "push": ["config"],
+        "push": ["config", "from_hub", "skip_merge"],
         "info": ["config"],
     }

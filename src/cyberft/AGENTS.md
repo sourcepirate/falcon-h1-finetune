@@ -18,8 +18,9 @@ loaders -> fingerprinted Arrow cache -> single-precision Trainer
 - `tracking.py`: `NullTracker`, `WandbTracker` (`log`, `summary`, `finish`, `enabled`), `resolve_enabled(conf, smoke, override, env)`, `metric_name(key)`, `clean_metrics(metrics)`, `final_summary(history, total_steps, global_step)`, `start(conf, smoke, override, process_index, run_config, env)`
 - `train.py`: `FiniteLossCallback`, `MetricsCallback` (after `FiniteLossCallback`), `expected_total_steps(cfg, train_rows, smoke)`, `train_dir(cfg, smoke)`, `load_splits(cfg, smoke)`, `build_args(cfg, train_rows, smoke)`, `train(cfg, smoke, *, wandb, push)` (auto-pushes merged model when `export.hf_repo` set, never in smoke)
 - `evaluate.py`: `RowLoss`, `EvalReport` (`worst()`, `summary()`, `assert_finite()`), `evaluate(cfg, adapter, split, smoke)`, `generate(cfg, prompts, adapter, smoke, max_new_tokens)`
-- `export.py`: `merge(cfg, adapter_dir)`, `convert(cfg, merged)`, `quantize(cfg, f16)`, `export_gguf(cfg, adapter, skip_merge)`, `push(cfg, adapter)` (merges then uploads to `export.hf_repo` via `HF_TOKEN`)
-- `__init__.py`: `__version__` (`0.5.0`), lazy `__getattr__` re-exports of Config/loaders/model/train/eval/export entry points (incl. `push`)
+- `export.py`: `merge(cfg, adapter_dir)`, `convert(cfg, merged, outtype)` (`f32|f16|bf16|q8_0` direct), `quantize(cfg, f16)`, `build_gguf(cfg, merged)`, `export_gguf(cfg, adapter, skip_merge)`, `_find_binary` (tree then PATH)
+- `hub.py`: `render_model_card(cfg, gguf_names)`, `write_repo_metadata(upload_dir, cfg, gguf_names)`, `push(cfg, adapter, skip_merge, from_hub)` (merge/reuse -> GGUF -> card -> upload -> remote verification), `_verify_remote`
+- `__init__.py`: `__version__` (`0.6.0`), lazy `__getattr__` re-exports of Config/loaders/model/train/eval/export entry points (incl. `push`)
 
 ## Invariants
 
@@ -39,12 +40,15 @@ loaders -> fingerprinted Arrow cache -> single-precision Trainer
 - Single precision end-to-end: `build_args` sets `bf16=False, fp16=False` (no AMP/GradScaler).
 - Checkpoint resume only when `cfg.train.resume` and not smoke.
 - `EvalReport.assert_finite` raises `NonFiniteLossError` listing first 10 broken rows; `eval` CLI returns 1 when `report.broken` non-empty.
-- `merge` raises `NotBuiltError` when `adapter_config.json` missing; `convert` raises `DependencyError` when `convert_hf_to_gguf.py` missing; `quantize` raises `DependencyError`/`RuntimeError` on missing binary/output; `export_gguf(skip_merge=True)` requires existing `merged_dir`.
+- `merge` raises `NotBuiltError` when `adapter_config.json` missing; `convert` raises `DependencyError` when `convert_hf_to_gguf.py` missing or the outtype is not direct; `quantize` raises `DependencyError`/`RuntimeError` on missing binary/output; `export_gguf(skip_merge=True)` requires existing `merged_dir`.
+- `build_gguf` writes `q8_0|f16|bf16|f32` with the converter and only k-quants through `llama-quantize`.
+- `push` requires `export.hf_repo`; `from_hub`/`skip_merge` are mutually exclusive; it always builds the card + GGUF before uploading, and `_verify_remote` raises unless README, training config, config.json, a `.safetensors`, and the GGUF are present remotely. `from_hub` uploads only card/config/GGUF.
 
 ## Side Effects
 
 - Network: HuggingFace Hub fetch via `load_dataset` / `hf_hub_download` (`LoaderBase._load_ds`); `HfApi().dataset_info` per source for manifest revisions.
 - Network: `train` opens a wandb run when enabled (Goggle `WANDB_*` env); init failure raises `TrackingError`, post-init failures only warn.
+- Network: `push` downloads from and uploads to the Hugging Face Hub (`HF_TOKEN`); `merge`/GGUF conversion run `llama.cpp` as a subprocess (`llama-quantize`) or its Python converter.
 - Filesystem writes: `prepare_data` (`shutil.rmtree` + `save_to_disk` + `manifest.json` under `data.output_dir/{full,smoke}`); `train` writes adapter + tokenizer via `save_pretrained`; `merge` writes merged safetensors + tokenizer to `export.merged_dir` (CPU bf16 load, ~7GB RAM); `convert`/`quantize` run `llama.cpp` subprocesses into `gguf_dir`.
 - Filesystem reads: Arrow cache hit via `load_from_disk`; checkpoint resume via `get_last_checkpoint`.
 - Compute: GPU-heavy 4-bit QLoRA training via `transformers` Trainer; `evaluate` runs per-row forward passes under `torch.no_grad`.
