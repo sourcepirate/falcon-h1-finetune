@@ -14,6 +14,7 @@ from transformers.trainer_utils import get_last_checkpoint
 
 from .config import Config, warmup_steps
 from .errors import ConfigError, NonFiniteLossError
+from .gate import assert_generations
 from .hub import push as push_model
 from .loaders import prepare_data
 from .model import build_model, build_tokenizer
@@ -163,6 +164,45 @@ def build_args(cfg: Config, train_rows: int, smoke: bool) -> TrainingArguments:
     )
 
 
+def run_generation_gate(cfg: Config, trainer: Trainer, tokenizer: Any) -> list[str]:
+    """Greedy generations on the gate prompts; raises on empty/repetitive output.
+
+    Runs on the in-memory adapter so it costs seconds, not a reload. A finite
+    loss does not catch mode collapse; this does, before anything is pushed.
+    """
+    import torch  # local: cyberft.train already needs transformers, but keep the import tight
+
+    model = trainer.model
+    was_training = model.training
+    model.eval()
+    answers: list[str] = []
+    generate_kwargs: dict[str, Any] = {
+        "max_new_tokens": cfg.train.gate_max_new_tokens,
+        "do_sample": False,
+    }
+    if tokenizer.pad_token_id is not None:
+        generate_kwargs["pad_token_id"] = tokenizer.pad_token_id
+    try:
+        with torch.no_grad():
+            for prompt in cfg.train.gate_prompts:
+                inputs = tokenizer.apply_chat_template(
+                    [{"role": "user", "content": prompt}],
+                    add_generation_prompt=True, return_tensors="pt", return_dict=True,
+                )
+                inputs = {key: value.to(model.device) for key, value in inputs.items()}
+                output = model.generate(**inputs, **generate_kwargs)
+                answers.append(
+                    tokenizer.decode(
+                        output[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True
+                    ).strip()
+                )
+    finally:
+        if was_training:
+            model.train()
+    assert_generations(list(cfg.train.gate_prompts), answers)
+    return answers
+
+
 def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None,
          push: bool | None = None) -> Trainer:
     if smoke and push:
@@ -223,6 +263,9 @@ def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None,
         model.save_pretrained(str(out_dir))
         tokenizer.save_pretrained(str(out_dir))
         log.info("adapter + tokenizer saved to %s", out_dir)
+        if cfg.train.generation_gate and not smoke:
+            log.info("running post-train generation gate on %d prompts", len(cfg.train.gate_prompts))
+            run_generation_gate(cfg, trainer, tokenizer)
         if do_push:
             push_model(cfg)
         exit_code = 0

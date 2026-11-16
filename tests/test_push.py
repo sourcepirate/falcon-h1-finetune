@@ -213,3 +213,85 @@ def test_from_hub_and_skip_merge_are_exclusive(tmp_path):
     cfg = _cfg(tmp_path)
     with pytest.raises(ConfigError, match="mutually exclusive"):
         hub.push(cfg, from_hub=True, skip_merge=True)
+
+
+# --- train wiring: gate must run before any push -----------------------------
+
+
+class _FakeTrainer:
+    def __init__(self, **kwargs):
+        self.callbacks = kwargs.get("callbacks", [])
+
+    def train(self, resume_from_checkpoint=None):
+        return None
+
+
+class _Saver:
+    def save_pretrained(self, *args, **kwargs):
+        return None
+
+
+def _setup_train(monkeypatch, cfg, *, order, gate_error=None):
+    import cyberft.train as train_mod
+
+    monkeypatch.setattr(train_mod, "build_tokenizer", lambda cfg_: _Saver())
+    monkeypatch.setattr(train_mod, "build_model", lambda cfg_: _Saver())
+    from datasets import Dataset, DatasetDict
+
+    monkeypatch.setattr(
+        train_mod,
+        "load_splits",
+        lambda cfg_, smoke: DatasetDict({"train": Dataset(range(8)), "eval": Dataset(range(2))}),
+    )
+    monkeypatch.setattr(train_mod, "Trainer", _FakeTrainer)
+    monkeypatch.setattr(train_mod, "push_model", lambda cfg_: order.append("push"))
+
+    def _gate(cfg_, trainer, tokenizer):
+        order.append("gate")
+        if gate_error is not None:
+            raise gate_error
+        return ["a plausible answer"]
+
+    monkeypatch.setattr(train_mod, "run_generation_gate", _gate)
+    return train_mod
+
+
+def test_train_gates_before_pushing(tmp_path, monkeypatch):
+    from cyberft.config import with_train
+
+    cfg = with_train(_cfg(tmp_path), generation_gate=True)
+    order: list[str] = []
+    train_mod = _setup_train(monkeypatch, cfg, order=order)
+    train_mod.train(cfg, smoke=False)
+    assert order == ["gate", "push"]
+
+
+def test_train_skips_gate_when_disabled(tmp_path, monkeypatch):
+    from cyberft.config import with_train
+
+    cfg = with_train(_cfg(tmp_path), generation_gate=False)
+    order: list[str] = []
+    train_mod = _setup_train(monkeypatch, cfg, order=order)
+    train_mod.train(cfg, smoke=False)
+    assert order == ["push"]
+
+
+def test_train_gate_failure_blocks_push(tmp_path, monkeypatch):
+    from cyberft.errors import DegenerateOutputError
+
+    cfg = _cfg(tmp_path)
+    order: list[str] = []
+    train_mod = _setup_train(
+        monkeypatch, cfg, order=order, gate_error=DegenerateOutputError("collapsed")
+    )
+    with pytest.raises(DegenerateOutputError, match="collapsed"):
+        train_mod.train(cfg, smoke=False)
+    assert order == ["gate"]
+
+
+def test_train_smoke_never_gates_or_pushes(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path)
+    order: list[str] = []
+    train_mod = _setup_train(monkeypatch, cfg, order=order)
+    train_mod.train(cfg, smoke=True)
+    assert order == []

@@ -83,6 +83,15 @@ class TrainConfig:
     num_workers: int = 2
     seed: int = 42
     resume: bool = True
+    # Post-train generation gate: a finite loss does not prove the adapter still
+    # answers. Runs greedy generation on these prompts before any push.
+    generation_gate: bool = True
+    gate_prompts: tuple[str, ...] = (
+        "Write a tcpdump command for DNS only",
+        "Explain how SQL injection works.",
+        "List three Linux commands to inspect open ports.",
+    )
+    gate_max_new_tokens: int = 48
 
 
 @dataclass(frozen=True)
@@ -174,6 +183,13 @@ class Config:
                 raise ConfigError(f"train.{name} must be positive")
         if self.train.num_workers < 0:
             raise ConfigError("train.num_workers must be >= 0")
+        if self.train.gate_max_new_tokens <= 0:
+            raise ConfigError("train.gate_max_new_tokens must be positive")
+        if self.train.generation_gate:
+            if not self.train.gate_prompts:
+                raise ConfigError("train.gate_prompts must not be empty when generation_gate is on")
+            if any(not prompt.strip() for prompt in self.train.gate_prompts):
+                raise ConfigError("train.gate_prompts must not contain empty prompts")
         if self.export.hf_repo is not None and not self.export.hf_repo:
             raise ConfigError("export.hf_repo must be non-empty when set")
 
@@ -265,10 +281,18 @@ def load_config(path: str | Path) -> Config:
 
 
 def warmup_steps(cfg: Config, train_rows: int) -> int:
-    """transformers 5 removed warmup_ratio; convert it to steps ourselves."""
-    per_epoch = max(1, train_rows // (cfg.train.micro_batch * cfg.train.grad_accum))
-    total = max(1, int(per_epoch * cfg.train.epochs))
-    return max(1, int(total * cfg.train.warmup_ratio))
+    """transformers 5 removed warmup_ratio; convert it to steps ourselves.
+
+    ``max_steps`` wins over the epoch estimate: a 100-step probe with a
+    158-step warmup (3% of the full epoch) never leaves warmup, so the LR
+    neither reaches the configured value nor decays.
+    """
+    if cfg.train.max_steps > 0:
+        total = cfg.train.max_steps
+    else:
+        per_epoch = max(1, train_rows // (cfg.train.micro_batch * cfg.train.grad_accum))
+        total = max(1, int(per_epoch * cfg.train.epochs))
+    return max(1, min(total, int(total * cfg.train.warmup_ratio)))
 
 
 def with_train(cfg: Config, **changes: Any) -> Config:

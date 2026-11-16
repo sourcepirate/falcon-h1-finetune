@@ -12,15 +12,16 @@ loaders -> fingerprinted Arrow cache -> single-precision Trainer
 - `config.py`: `SourceConfig`, `ModelConfig` (`quant: 4bit|none` for QLoRA vs plain-LoRA base), `DataConfig`, `LoraConfig`, `TrainConfig` (`report_to` must not contain `"wandb"`), `ExportConfig` (`llama_cpp_rev` pin consumed by the clone step), `WandbConfig` (`enabled: auto|always|never`, env wins), `Config` (with `validate()`), `load_config(path)`, `warmup_steps(cfg, train_rows)`, `with_train(cfg, **changes)`, `with_data(cfg, **changes)`, `with_export(cfg, **changes)`, `with_wandb(cfg, **changes)`
 - `args.py`: `build_parser()` — subcommands `data/train/eval/export/push/info`; `train` takes `--wandb/--no-wandb`
 - `cli.py`: `run(args) -> int` (dispatches subcommands), `main(argv) -> int` (logging setup, `CyberftError` -> exit 1, `KeyboardInterrupt` -> 130)
-- `errors.py`: `CyberftError`, `ConfigError`, `NotBuiltError`, `DependencyError`, `TrackingError`, `NonFiniteLossError`
+- `errors.py`: `CyberftError`, `ConfigError`, `NotBuiltError`, `DependencyError`, `TrackingError`, `DegenerateOutputError`, `NonFiniteLossError`
 - `loaders.py`: `LoaderBase`, `RedTeamLoader`, `KaliLoader`, `KimiLoader`, `CTILoader`, `ExploitDBLoader`, `LinuxCommandsLoader`, `DebianLoader`, `LOADERS`, `get_loader(name)`, `build_messages(cfg)`, `RenderSplitPipeline` (`run()`, `render_row()`, `tokenize_row()`), `render_and_split(cfg, tokenizer, dataset, eval_size)`, `build(cfg, tokenizer, smoke)`, `fingerprint(cfg, smoke)`, `content_hash(splits)`, `manifest(cfg, splits, smoke)`, `prepare_data(cfg, smoke, force, tokenizer)`, `data_manifest(cfg, smoke)`
 - `model.py`: `amp_dtype(cfg)`, `build_tokenizer(cfg)` (Tiny fallback template `TINY_FALLBACK_CHAT_TEMPLATE` when the Hub ships none), `build_model(cfg)` (plain base when `model.quant == "none"`), `attach_adapter(cfg, adapter_dir)`
+- `gate.py`: `degenerate_reason(text)` (empty/<8 chars/<3 words/markup soup/bigram<0.35/4-gram x3), `assert_generations(prompts, answers)`, `distinct_bigram_ratio`, `max_ngram_repeats` (torch-free post-train output check)
 - `tracking.py`: `NullTracker`, `WandbTracker` (`log`, `summary`, `finish`, `enabled`), `resolve_enabled(conf, smoke, override, env)`, `metric_name(key)`, `clean_metrics(metrics)`, `final_summary(history, total_steps, global_step)`, `start(conf, smoke, override, process_index, run_config, env)`
-- `train.py`: `FiniteLossCallback`, `MetricsCallback` (after `FiniteLossCallback`), `expected_total_steps(cfg, train_rows, smoke)`, `train_dir(cfg, smoke)`, `load_splits(cfg, smoke)`, `build_args(cfg, train_rows, smoke)`, `train(cfg, smoke, *, wandb, push)` (auto-pushes merged model when `export.hf_repo` set, never in smoke)
+- `train.py`: `FiniteLossCallback`, `MetricsCallback` (after `FiniteLossCallback`), `run_generation_gate(cfg, trainer, tokenizer)`, `expected_total_steps(cfg, train_rows, smoke)`, `train_dir(cfg, smoke)`, `load_splits(cfg, smoke)`, `build_args(cfg, train_rows, smoke)`, `train(cfg, smoke, *, wandb, push)` (gate then push when `export.hf_repo` set, never in smoke)
 - `evaluate.py`: `RowLoss`, `EvalReport` (`worst()`, `summary()`, `assert_finite()`), `evaluate(cfg, adapter, split, smoke)`, `generate(cfg, prompts, adapter, smoke, max_new_tokens)`
 - `export.py`: `merge(cfg, adapter_dir)`, `convert(cfg, merged, outtype)` (`f32|f16|bf16|q8_0` direct), `quantize(cfg, f16)`, `build_gguf(cfg, merged)`, `export_gguf(cfg, adapter, skip_merge)`, `_find_binary` (tree then PATH)
 - `hub.py`: `render_model_card(cfg, gguf_names)`, `write_repo_metadata(upload_dir, cfg, gguf_names)`, `push(cfg, adapter, skip_merge, from_hub)` (merge/reuse -> GGUF -> card -> upload -> remote verification), `_verify_remote`
-- `__init__.py`: `__version__` (`0.6.0`), lazy `__getattr__` re-exports of Config/loaders/model/train/eval/export entry points (incl. `push`)
+- `__init__.py`: `__version__` (`0.7.0`), lazy `__getattr__` re-exports of Config/loaders/model/train/eval/export entry points (incl. `push`)
 
 ## Invariants
 
@@ -29,7 +30,9 @@ loaders -> fingerprinted Arrow cache -> single-precision Trainer
 - `Config.validate`: `model.id` non-empty; `model.dtype` in `(auto, bf16, fp16)`; `model.quant` in `(4bit, none)`; `model.attn` in `(sdpa, flash_attention_2)`; missing `out_proj`/`lm_head` in `bnb_skip_modules` warns (not fails) — hard-fail history assumed Falcon-H1-3B's vocab 65537, but Tiny-R-90M has vocab 32768 with tied embeddings.
 - LoRA targets must be non-empty and must not intersect `{out_proj, conv1d}`; `lora.r` positive.
 - Data sources non-empty, no duplicate names, each needs `name` + `repo` with non-empty `splits` and positive `cap`; `parquet` / `subset` mutually exclusive; `max_len >= 128`; `0 < eval_max_len <= max_len`; `eval_size > 0`.
-- Train hyperparams: `lr > 0`, `epochs > 0`, `max_steps == -1` or `> 0`, `micro_batch` / `grad_accum > 0`, `warmup_ratio` in `[0, 1)`, `save` / `eval` / `logging_steps > 0`.
+- Train hyperparams: `lr > 0`, `epochs > 0`, `max_steps == -1` or `> 0`, `micro_batch` / `grad_accum > 0`, `warmup_ratio` in `[0, 1)`, `save` / `eval` / `logging_steps > 0`, `gate_max_new_tokens > 0`; `gate_prompts` non-empty when `generation_gate` is on.
+- `warmup_steps` uses `max_steps` when set, so a 100-step probe gets a 3-step warmup instead of 158 (the full-epoch 3%).
+- `train` runs the generation gate after saving the adapter and before `push`; `DegenerateOutputError` marks the run failed and nothing is uploaded. Smoke never gates or pushes.
 - Unknown dataclass keys and unknown top-level YAML sections raise `ConfigError`; YAML must be a mapping with a `model` section.
 - `build_messages` requires configured sources to exactly cover `LOADERS` keys — unknown names and missing datasets both raise `ConfigError`.
 - `LoaderBase` subclass must set `DATASET_NAME` matching `spec.name`, else `TypeError` / `ConfigError`.

@@ -9,6 +9,7 @@ from cyberft.config import (
     ModelConfig,
     SourceConfig,
     load_config,
+    warmup_steps,
     with_train,
 )
 
@@ -188,6 +189,40 @@ def test_max_steps_validation():
         with_train(cfg, max_steps=0)
     assert with_train(cfg, max_steps=100).train.max_steps == 100
     assert with_train(cfg, max_steps=-1).train.max_steps == -1
+
+
+def test_warmup_is_capped_by_max_steps():
+    cfg = load_config(TINY_CONFIG)
+    # Full epoch: 42305 rows / 8 -> 5288 steps, 3% warmup = 158.
+    full_epoch = with_train(cfg, max_steps=-1)
+    assert warmup_steps(full_epoch, 42305) == 158
+    # A 100-step probe must not inherit that 158-step warmup (the v1 bug).
+    probe = with_train(cfg, max_steps=100)
+    assert warmup_steps(probe, 42305) == 3
+    assert warmup_steps(probe, 42305) <= probe.train.max_steps
+
+
+def test_gate_prompts_must_not_be_empty():
+    cfg = load_config(TINY_CONFIG)
+    with pytest.raises(ConfigError, match="gate_prompts"):
+        with_train(cfg, gate_prompts=())
+    with pytest.raises(ConfigError, match="gate_prompts"):
+        with_train(cfg, gate_prompts=("ok", "  "))
+
+
+def test_gate_token_budget_must_be_positive():
+    cfg = load_config(TINY_CONFIG)
+    with pytest.raises(ConfigError, match="gate_max_new_tokens"):
+        with_train(cfg, gate_max_new_tokens=0)
+
+
+def test_tiny_config_ships_the_corrected_recipe():
+    cfg = load_config(TINY_CONFIG)
+    assert cfg.train.max_steps == 1500
+    assert cfg.train.lr == 1e-4
+    assert cfg.lora.r == 16
+    assert cfg.train.generation_gate is True
+    assert len(cfg.train.gate_prompts) == 3
 
 
 def test_with_train_overrides_output_dir(tmp_path):

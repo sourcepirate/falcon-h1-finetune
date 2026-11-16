@@ -55,7 +55,9 @@ the cache instead of silently training on stale rows.
 | `configs/qlora-3b-t4.yaml` | Colab T4, legacy | fp16 | 1024 |
 
 LoRA: `r=32, alpha=16, dropout=0.05`, targets `q/k/v/o/in/gate/up/down_proj`.
-Training: 4-bit NF4 base, `paged_adamw_8bit`, `lr=2e-4`, 1 epoch, cosine schedule.
+Training: 4-bit NF4 base, `paged_adamw_8bit`, `lr=1e-4`, `max_steps=1500`, cosine schedule
+with warmup capped at the run length. A post-train generation gate runs three
+prompts and refuses empty/repetitive output before anything is pushed.
 `notebooks/run.ipynb` is the T4 entry point (`Run All` with `RUN_TRAIN = False` is safe).
 
 ## Tiny-R-90M quickstart
@@ -139,7 +141,16 @@ those three files. `push --skip-merge` reuses `export.merged_dir` when the
 adapter is gone but the merged weights are still local.
 
 Failures are typed exceptions (`ConfigError`, `NotBuiltError`, `DependencyError`,
-`TrackingError`, `NonFiniteLossError`) — the library never parses arguments or calls `sys.exit`.
+`TrackingError`, `DegenerateOutputError`, `NonFiniteLossError`) — the library never
+parses arguments or calls `sys.exit`.
+
+## Post-train gate
+
+After the adapter is saved and before `push`, `train` generates greedily on `train.gate_prompts`
+(default: three cyber prompts) and raises `DegenerateOutputError` when an answer is empty, shorter
+than 8 characters or 3 words, looks like markup soup (2+ HTML-ish tags), has a distinct-bigram
+ratio under 0.35, or repeats a 4-gram 3+ times. A finite
+loss does not catch mode collapse; this gate does. Set `train.generation_gate: false` to skip it.
 
 ## Metrics (wandb / Goggle)
 
@@ -187,6 +198,7 @@ adapter saves.
 | `NonFiniteLossError` during training | loss went NaN at that step | stop; lower `lr`, check `max_len` |
 | `NonFiniteLossError` during evaluation | one pathological row | `make eval` names the row; drop it in the loader class in `cyberft/loaders.py` |
 | `NonFiniteLossError` on a T4 (fp16) | fp16 SSM arithmetic on a long row | lower `max_len` (try 768), then `lr` to 1e-4 |
+| `DegenerateOutputError` after training | adapter collapsed to repeating one answer | lower `lr`, raise `max_steps`, check the gate prompts; nothing was pushed |
 | `No kernel image is available` from `mamba-ssm` | wrong CUDA arch | reinstall `requirements-fast.txt` on the target GPU |
 | `ImportError: ... requires bitsandbytes` | runtime installed without the `train` extra | `pip install -e ".[train]"`, restart the kernel |
 | `wandb.finish` never runs / Goggle status `unknown` | trainer crashed before `finish` | check logs for the pre-finish exception; only exit 0 after the adapter save marks `completed` |

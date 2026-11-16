@@ -19,13 +19,14 @@ from __future__ import annotations
 from .errors import (
     ConfigError,
     CyberftError,
+    DegenerateOutputError,
     DependencyError,
     NonFiniteLossError,
     NotBuiltError,
     TrackingError,
 )
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 # public name -> module defining it
 _LAZY = {
@@ -53,6 +54,7 @@ __all__ = [
     *_LAZY,
     "ConfigError",
     "CyberftError",
+    "DegenerateOutputError",
     "DependencyError",
     "NonFiniteLossError",
     "NotBuiltError",

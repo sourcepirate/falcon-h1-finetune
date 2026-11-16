@@ -23,5 +23,9 @@ class TrackingError(CyberftError, RuntimeError):
     """The metrics backend (wandb/Goggle) could not be initialised."""
 
 
+class DegenerateOutputError(CyberftError, RuntimeError):
+    """Post-training generation is empty, too short, or repetitive."""
+
+
 class NonFiniteLossError(CyberftError, RuntimeError):
     """Training or evaluation produced a NaN/inf loss."""
