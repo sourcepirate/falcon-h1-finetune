@@ -38,7 +38,8 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cu12
 RUN pip install --no-cache-dir -r requirements-fast.txt --no-build-isolation \
  || echo "WARNING: fast kernels not installed; using pure-torch Mamba fallback"
 # Conversion deps only: llama.cpp's requirements file pins transformers==4.57.6,
-# which would downgrade the 5.20.2 runtime, so it is deliberately not used.
+# which cannot load this tokenizer (tokenizer_class=TokenizersBackend, a 5.x
+# class) and would downgrade the 5.20.2 runtime, so it is deliberately not used.
 RUN pip install --no-cache-dir "sentencepiece>=0.1.98,<0.3.0" "protobuf>=4.21,<5"
 
 

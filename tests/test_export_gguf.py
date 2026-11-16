@@ -83,3 +83,23 @@ def test_find_binary_falls_back_to_path(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path, "Q4_K_M")
     monkeypatch.setattr(export_mod.shutil, "which", lambda name: "/usr/local/bin/llama-quantize")
     assert export_mod._find_binary(cfg, "llama-quantize") == Path("/usr/local/bin/llama-quantize")
+
+
+def test_convert_names_the_model_in_gguf_metadata(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path, "Q8_0")
+    script = Path(cfg.export.llama_cpp_dir) / "convert_hf_to_gguf.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("", encoding="utf-8")
+    captured: dict[str, list[str]] = {}
+
+    def _run(cmd, check=True):
+        captured["cmd"] = cmd
+        out = Path(cmd[cmd.index("--outfile") + 1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"GGUF")
+
+    monkeypatch.setattr(export_mod.subprocess, "run", _run)
+    export_mod.convert(cfg, tmp_path, outtype="q8_0")
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--outtype") + 1] == "q8_0"
+    assert cmd[cmd.index("--model-name") + 1] == cfg.export.hf_repo
