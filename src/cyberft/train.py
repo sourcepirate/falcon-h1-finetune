@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from datasets import DatasetDict
 from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
@@ -13,7 +13,7 @@ from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import get_last_checkpoint
 
 from .config import Config, warmup_steps
-from .errors import ConfigError, NonFiniteLossError
+from .errors import ConfigError, NonFiniteLossError, NotBuiltError
 from .gate import assert_generations
 from .hub import push as push_model
 from .loaders import prepare_data
@@ -173,6 +173,11 @@ def run_generation_gate(cfg: Config, trainer: Trainer, tokenizer: Any) -> list[s
     import torch  # local: cyberft.train already needs transformers, but keep the import tight
 
     model = trainer.model
+    if model is None:
+        raise NotBuiltError("trainer.model is None; cannot run the generation gate")
+    # Trainer.model is typed PreTrainedModel | Module | None; both real branches
+    # here are a causal LM, so treat it as Any instead of narrowing twice.
+    model = cast(Any, model)
     was_training = model.training
     model.eval()
     answers: list[str] = []
