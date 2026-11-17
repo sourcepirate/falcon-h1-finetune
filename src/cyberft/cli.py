@@ -17,7 +17,7 @@ from .evaluate import evaluate
 from .export import export_gguf
 from .hub import push
 from .loaders import data_manifest, prepare_data
-from .model import amp_dtype
+from .model import amp_dtype, resolve_device
 from .train import train
 
 log = logging.getLogger("cyberft")
@@ -53,6 +53,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "info":
+        print(f"device   : {resolve_device()}")
         print(f"gpu      : {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none'}")
         print(f"dtype    : {amp_dtype(cfg)}")
         print("config   :")
