@@ -60,7 +60,8 @@ train:
   micro_batch: 1
   grad_accum: 8
   epochs: 1
-  max_steps: 400      # local probe length; raise toward 1500 once step time is known
+  max_steps: 1500    # full recipe: at 400 the cosine schedule ends at LR~1e-9 and the
+                     # gate catches a collapsed adapter (repeated -vv)
   lr: 1.0e-4
   warmup_ratio: 0.03
   max_grad_norm: 1.0
