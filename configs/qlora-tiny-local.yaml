@@ -65,13 +65,16 @@ train:
   warmup_ratio: 0.03
   max_grad_norm: 1.0
   optim: adamw_torch
-  gradient_checkpointing: true
+  # No gradient checkpointing: 91M fp32 is ~364MB, so recomputation buys no
+  # memory here, and the extra graph passes are what trip MPS command-buffer
+  # hangs on the M2 Max (M1 Max tolerated them; the studio did not).
+  gradient_checkpointing: false
   logging_steps: 10
-  save_steps: 100
+  save_steps: 50      # frequent checkpoints: MPS hangs are not always recoverable
   eval_steps: 100
-  save_total_limit: 2
+  save_total_limit: 3
   report_to: []
-  num_workers: 2
+  num_workers: 0      # forked workers + MPS has hung before; data is cached anyway
   seed: 42
   resume: true
   # Post-train generation gate: finite loss cannot catch mode collapse.
