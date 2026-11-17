@@ -5,8 +5,8 @@
 #   * optim: adamw_torch -> paged_adamw_8bit needs bitsandbytes too.
 #   * dtype: auto   -> amp_dtype() resolves to fp32 off-CUDA, so the whole model
 #                      runs in one dtype (build_args keeps bf16=False, fp16=False).
-# max_steps is lower than the 1500-step GPU recipe: the reference Mamba kernels
-# (no mamba_ssm on macOS) are several times slower than the fused CUDA ones.
+# max_steps matches the GPU recipe: at 400 the cosine schedule ends at LR~1e-9
+# and the generation gate rejects the adapter as collapsed.
 model:
   id: tiiuae/Falcon-H1-Tiny-R-90M
   dtype: auto
