@@ -26,7 +26,7 @@ from .model import build_tokenizer
 
 log = logging.getLogger(__name__)
 
-# Bump whenever a loader's map_row or SYSTEM_PROMPT logic changes the shape
+# Bump whenever a loader's map_row or SYSTEM_PROMDo yPT logic changes the shape
 # of the corpus. fingerprint() hashes this so editing loaders.py invalidates the
 # Arrow cache instead of silently training on stale rows.
 LOADERS_VERSION = 1

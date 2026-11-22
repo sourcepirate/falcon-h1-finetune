@@ -17,7 +17,7 @@ from .errors import ConfigError, NonFiniteLossError, NotBuiltError
 from .gate import assert_generations
 from .hub import push as push_model
 from .loaders import prepare_data
-from .model import build_model, build_tokenizer
+from .model import build_model, build_tokenizer, resolve_device
 from .tracking import NullTracker, WandbTracker, clean_metrics, final_summary, metric_name, start
 
 log = logging.getLogger(__name__)
@@ -75,6 +75,37 @@ class MetricsCallback(TrainerCallback):
         self._tracker.summary(
             final_summary(history, total_steps=self._total_steps, global_step=state.global_step)
         )
+
+
+class MpsCacheCallback(TrainerCallback):
+    """Release cached MPS blocks during long local runs.
+
+    The Metal allocator keeps every freed block in its cache. With varying
+    sequence lengths the cache fragments and the process grows well past
+    physical RAM (observed: 37 GB for a 0.5B fp32 model on a 32 GB M2 Max),
+    at which point macOS swaps every step and throughput collapses from 4.5 s
+    to over 90 s per optimizer step. Emptying the cache every few steps keeps
+    the working set bounded; it changes no training math.
+    """
+
+    def __init__(self, every: int = 10, log_every: int = 100) -> None:
+        self.every = every
+        self.log_every = log_every
+
+    def on_step_end(self, args: Any, state: Any, control: Any, **kwargs: Any) -> None:
+        import torch
+
+        if not torch.backends.mps.is_available():
+            return
+        if self.every > 0 and state.global_step % self.every == 0:
+            torch.mps.empty_cache()
+        if self.log_every > 0 and state.global_step % self.log_every == 0:
+            current = torch.mps.current_allocated_memory() / 1e9
+            driver = torch.mps.driver_allocated_memory() / 1e9
+            log.info(
+                "mps memory at step %d: %.2f GB live, %.2f GB driver",
+                state.global_step, current, driver,
+            )
 
 
 def expected_total_steps(cfg: Config, train_rows: int, smoke: bool) -> int:
@@ -243,7 +274,8 @@ def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None,
         train_dataset=splits["train"],
         eval_dataset=splits["eval"],
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
-        callbacks=[FiniteLossCallback(), MetricsCallback(tracker, total_steps)],
+        callbacks=[FiniteLossCallback(), MetricsCallback(tracker, total_steps)]
+        + ([MpsCacheCallback()] if resolve_device().type == "mps" else []),
     )
 
     resume = None
