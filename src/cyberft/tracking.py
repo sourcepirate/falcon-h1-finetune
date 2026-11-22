@@ -89,7 +89,7 @@ def metric_name(key: str) -> str:
         rest = key[len("eval_") :]
         return "eval/loss" if rest == "loss" else f"eval/{rest}"
     if key.startswith("train_") and len(key) > len("train_"):
-        return f"train/{key[len('train_'):]}"
+        return f"train/{key[len('train_') :]}"
     return key
 
 
@@ -136,19 +136,11 @@ def final_summary(
     for entry in reversed(log_history):
         if last_loss is None:
             value = entry.get("loss")
-            if (
-                isinstance(value, (int, float))
-                and not isinstance(value, bool)
-                and math.isfinite(value)
-            ):
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
                 last_loss = float(value)
         if last_eval is None:
             value = entry.get("eval_loss")
-            if (
-                isinstance(value, (int, float))
-                and not isinstance(value, bool)
-                and math.isfinite(value)
-            ):
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
                 last_eval = float(value)
         if last_loss is not None and last_eval is not None:
             break

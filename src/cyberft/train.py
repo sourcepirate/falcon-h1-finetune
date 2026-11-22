@@ -32,8 +32,9 @@ SMOKE_STEPS = 5
 class FiniteLossCallback(TrainerCallback):
     """Abort training on the first non-finite loss instead of saving a poisoned adapter."""
 
-    def on_log(self, args: Any, state: Any, control: Any,
-               logs: dict[str, float] | None = None, **kwargs: Any) -> None:
+    def on_log(
+        self, args: Any, state: Any, control: Any, logs: dict[str, float] | None = None, **kwargs: Any
+    ) -> None:
         if not logs:
             return
         for key in ("loss", "eval_loss"):
@@ -62,8 +63,9 @@ class MetricsCallback(TrainerCallback):
         if self._total_steps is not None:
             self._tracker.summary({"_total_steps": self._total_steps})
 
-    def on_log(self, args: Any, state: Any, control: Any,
-               logs: dict[str, float] | None = None, **kwargs: Any) -> None:
+    def on_log(
+        self, args: Any, state: Any, control: Any, logs: dict[str, float] | None = None, **kwargs: Any
+    ) -> None:
         if not logs:
             return
         cleaned = clean_metrics({metric_name(key): value for key, value in logs.items()})
@@ -104,7 +106,9 @@ class MpsCacheCallback(TrainerCallback):
             driver = torch.mps.driver_allocated_memory() / 1e9
             log.info(
                 "mps memory at step %d: %.2f GB live, %.2f GB driver",
-                state.global_step, current, driver,
+                state.global_step,
+                current,
+                driver,
             )
 
 
@@ -223,13 +227,15 @@ def run_generation_gate(cfg: Config, trainer: Trainer, tokenizer: Any) -> list[s
             for prompt in cfg.train.gate_prompts:
                 inputs = tokenizer.apply_chat_template(
                     [{"role": "user", "content": prompt}],
-                    add_generation_prompt=True, return_tensors="pt", return_dict=True,
+                    add_generation_prompt=True,
+                    return_tensors="pt",
+                    return_dict=True,
                 )
                 inputs = {key: value.to(model.device) for key, value in inputs.items()}
                 output = model.generate(**inputs, **generate_kwargs)
                 answers.append(
                     tokenizer.decode(
-                        output[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True
+                        output[0][inputs["input_ids"].shape[-1] :], skip_special_tokens=True
                     ).strip()
                 )
     finally:
@@ -239,8 +245,9 @@ def run_generation_gate(cfg: Config, trainer: Trainer, tokenizer: Any) -> list[s
     return answers
 
 
-def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None,
-         push: bool | None = None) -> Trainer:
+def train(
+    cfg: Config, smoke: bool = False, *, wandb: bool | None = None, push: bool | None = None
+) -> Trainer:
     if smoke and push:
         raise ConfigError("--push with --smoke is refused: smoke trains on a 64-row slice")
     # Auto-push when the YAML names a Hub repo (never in smoke); explicit
@@ -252,10 +259,12 @@ def train(cfg: Config, smoke: bool = False, *, wandb: bool | None = None,
     tokenizer = build_tokenizer(cfg)
     splits = load_splits(cfg, smoke)
     if smoke:
-        splits = DatasetDict({
-            "train": splits["train"].select(range(min(SMOKE_TRAIN_ROWS, len(splits["train"])))),
-            "eval": splits["eval"].select(range(min(SMOKE_EVAL_ROWS, len(splits["eval"])))),
-        })
+        splits = DatasetDict(
+            {
+                "train": splits["train"].select(range(min(SMOKE_TRAIN_ROWS, len(splits["train"])))),
+                "eval": splits["eval"].select(range(min(SMOKE_EVAL_ROWS, len(splits["eval"])))),
+            }
+        )
 
     model = build_model(cfg)
     args = build_args(cfg, len(splits["train"]), smoke)

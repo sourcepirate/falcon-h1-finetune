@@ -31,7 +31,7 @@ def test_too_few_words_rejected():
 
 
 def test_markup_soup_rejected():
-    text = 'curl https/Example URLs | <file>.gz <txt><p> <html><body>'
+    text = "curl https/Example URLs | <file>.gz <txt><p> <html><body>"
     assert "markup" in (degenerate_reason(text) or "")
 
 

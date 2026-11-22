@@ -61,8 +61,17 @@ def convert(cfg: Config, merged: Path, outtype: str = "f16") -> Path:
     # General.name inside the GGUF, instead of the converter's "Hf Model" default.
     name = cfg.export.hf_repo or cfg.model.id
     subprocess.run(
-        [sys.executable, str(script), str(merged), "--outfile", str(out), "--outtype", outtype,
-         "--model-name", name],
+        [
+            sys.executable,
+            str(script),
+            str(merged),
+            "--outfile",
+            str(out),
+            "--outtype",
+            outtype,
+            "--model-name",
+            name,
+        ],
         check=True,
     )
     if not out.exists():

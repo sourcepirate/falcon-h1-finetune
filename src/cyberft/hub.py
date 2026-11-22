@@ -71,7 +71,7 @@ def render_model_card(cfg: Config, gguf_names: list[str]) -> str:
 {front_matter}
 ---
 
-# {cfg.model.id.split('/')[-1]} — cyber-security QLoRA
+# {cfg.model.id.split("/")[-1]} — cyber-security QLoRA
 
 A QLoRA fine-tune of [`{cfg.model.id}`](https://huggingface.co/{cfg.model.id})
 on public red-team and cyber-security datasets. Weights are merged into the base
@@ -113,7 +113,7 @@ Transformers:
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model_id = "{cfg.export.hf_repo or 'your-org/your-model'}"
+model_id = "{cfg.export.hf_repo or "your-org/your-model"}"
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model = AutoModelForCausalLM.from_pretrained(model_id, device_map="auto")
 messages = [{{"role": "user", "content": "Write a tcpdump command for DNS only"}}]
@@ -180,9 +180,7 @@ def push(
         with tempfile.TemporaryDirectory(prefix="cyberft-push-") as tmp:
             merged = Path(tmp)
             log.info("downloading %s for repair", cfg.export.hf_repo)
-            snapshot_download(
-                repo_id=cfg.export.hf_repo, local_dir=merged, ignore_patterns=["*.gguf"]
-            )
+            snapshot_download(repo_id=cfg.export.hf_repo, local_dir=merged, ignore_patterns=["*.gguf"])
             return _publish(cfg, api, merged, upload_weights=False)
     adapter_dir = Path(adapter) if adapter else Path(cfg.train.output_dir)
     if skip_merge:
@@ -210,8 +208,12 @@ def _publish(cfg: Config, api: HfApi, merged: Path, *, upload_weights: bool) -> 
         for path in metadata:
             api.upload_file(repo_id=repo_id, path_or_fileobj=str(path), path_in_repo=path.name)
     api.upload_file(repo_id=repo_id, path_or_fileobj=str(gguf), path_in_repo=gguf.name)
-    _verify_remote(api, repo_id, required={CARD_FILE, TRAINING_CONFIG_FILE, "config.json", gguf.name},
-                   upload_weights=upload_weights)
+    _verify_remote(
+        api,
+        repo_id,
+        required={CARD_FILE, TRAINING_CONFIG_FILE, "config.json", gguf.name},
+        upload_weights=upload_weights,
+    )
     log.info("pushed %s: card + %s to %s", merged, gguf.name, repo_id)
     return repo_id
 

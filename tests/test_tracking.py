@@ -90,18 +90,20 @@ def test_metric_name_mapping():
 
 
 def test_clean_metrics_keeps_only_finite_numbers():
-    cleaned = clean_metrics({
-        "train/loss": 1.25,
-        "train/lr": 2e-4,
-        "train/steps": 40,
-        "_step": 7,
-        "_runtime": 3.0,
-        "bad": float("nan"),
-        "worse": float("inf"),
-        "name": "ckpt",
-        "flag": True,
-        "nothing": None,
-    })
+    cleaned = clean_metrics(
+        {
+            "train/loss": 1.25,
+            "train/lr": 2e-4,
+            "train/steps": 40,
+            "_step": 7,
+            "_runtime": 3.0,
+            "bad": float("nan"),
+            "worse": float("inf"),
+            "name": "ckpt",
+            "flag": True,
+            "nothing": None,
+        }
+    )
     assert cleaned == {"train/loss": 1.25, "train/lr": 2e-4, "train/steps": 40.0}
 
 
@@ -195,8 +197,9 @@ def test_start_returns_null_off_rank(fake_wandb):
 
 
 def test_start_binds_goggle_env_over_yaml(fake_wandb):
-    conf = _conf(project="yaml-project", entity="yaml-entity", run_name="yaml-name",
-                 tags=("a",), mode="offline")
+    conf = _conf(
+        project="yaml-project", entity="yaml-entity", run_name="yaml-name", tags=("a",), mode="offline"
+    )
     env = {
         "WANDB_API_KEY": "k",
         "WANDB_PROJECT": "env-project",

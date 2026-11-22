@@ -45,10 +45,12 @@ def test_kimi_rejects_conversations_without_assistant_turn():
 
 def test_kimi_inserts_system_prompt_and_keeps_turns():
     loader = _loader(KimiLoader, "kimi")
-    row = {"messages": [
-        {"role": "user", "content": "explain CVE-2024-1"},
-        {"role": "assistant", "content": "It is a remote code execution flaw."},
-    ]}
+    row = {
+        "messages": [
+            {"role": "user", "content": "explain CVE-2024-1"},
+            {"role": "assistant", "content": "It is a remote code execution flaw."},
+        ]
+    }
     messages = loader.map_row(row)
     assert [m["role"] for m in messages] == ROLES
     assert len(messages) == 3
@@ -75,5 +77,4 @@ def test_registry_resolves_every_known_source():
 
 def test_loader_rejects_mismatched_spec():
     with pytest.raises(Exception, match="handles source"):
-        RedTeamLoader(SourceConfig(name="kali", repo="org/dataset"),
-                      max_chars=MAX_CHARS, seed=SEED)
+        RedTeamLoader(SourceConfig(name="kali", repo="org/dataset"), max_chars=MAX_CHARS, seed=SEED)

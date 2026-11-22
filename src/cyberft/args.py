@@ -49,11 +49,13 @@ def build_parser() -> argparse.ArgumentParser:
     common(p_push)
     source = p_push.add_mutually_exclusive_group()
     source.add_argument(
-        "--from-hub", action="store_true",
+        "--from-hub",
+        action="store_true",
         help="repair an existing Hub repo: rebuild card + GGUF from its published weights",
     )
     source.add_argument(
-        "--skip-merge", action="store_true",
+        "--skip-merge",
+        action="store_true",
         help="reuse export.merged_dir instead of merging the adapter again",
     )
 

@@ -164,11 +164,7 @@ def build_model(cfg: Config) -> PeftModel:
 def attach_adapter(cfg: Config, adapter_dir: str | os.PathLike) -> PeftModel:
     """Trained adapter on a fresh base (quantized per model.quant), for evaluation and export."""
     base: PreTrainedModel
-    base = (
-        _load_plain(cfg, amp_dtype(cfg))
-        if cfg.model.quant == "none"
-        else _load_base(cfg, amp_dtype(cfg))
-    )
+    base = _load_plain(cfg, amp_dtype(cfg)) if cfg.model.quant == "none" else _load_base(cfg, amp_dtype(cfg))
     model = PeftModel.from_pretrained(base, str(adapter_dir), is_trainable=False)
     model.eval()
     return model

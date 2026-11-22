@@ -24,12 +24,12 @@ FORBIDDEN_LORA_TARGETS = {"out_proj", "conv1d"}
 class SourceConfig:
     """Where one dataset comes from. How a row becomes messages lives in the loader class in loaders.py."""
 
-    name: str                        # must match a loader in loaders.LOADERS
+    name: str  # must match a loader in loaders.LOADERS
     repo: str
     splits: tuple[str, ...] = ("train",)
-    subset: str | None = None        # load_dataset(name=...)
-    parquet: str | None = None       # single file instead of a subset
-    revision: str | None = None      # branch, tag or commit
+    subset: str | None = None  # load_dataset(name=...)
+    parquet: str | None = None  # single file instead of a subset
+    revision: str | None = None  # branch, tag or commit
     cap: int | None = None
 
 
@@ -58,8 +58,14 @@ class LoraConfig:
     alpha: int = 16
     dropout: float = 0.05
     target_modules: tuple[str, ...] = (
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "in_proj", "gate_proj", "up_proj", "down_proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "in_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
     )
 
 
@@ -256,8 +262,7 @@ def _build(cls: type, raw: dict[str, Any] | None, section: str) -> Any:
     unknown = set(raw) - set(hints)
     if unknown:
         raise ConfigError(f"{section}: unknown key(s) {sorted(unknown)}")
-    return cls(**{name: _coerce(hints[name], value, f"{section}.{name}")
-                  for name, value in raw.items()})
+    return cls(**{name: _coerce(hints[name], value, f"{section}.{name}") for name, value in raw.items()})
 
 
 def load_config(path: str | Path) -> Config:

@@ -114,18 +114,18 @@ Every stage is a function; the CLI and the notebook are thin wrappers over these
 ```python
 from cyberft import load_config, prepare_data, train, evaluate, generate, export_gguf, train_dir
 
-cfg = load_config("configs/qlora-3b.yaml")     # validated dataclass
+cfg = load_config("configs/qlora-3b.yaml")  # validated dataclass
 
-splits  = prepare_data(cfg, smoke=True)        # cached DatasetDict
-trainer = train(cfg, smoke=True)               # returns transformers.Trainer, saves adapter
-adapter = train_dir(cfg, smoke=True)           # where the adapter/checkpoints live
+splits = prepare_data(cfg, smoke=True)  # cached DatasetDict
+trainer = train(cfg, smoke=True)  # returns transformers.Trainer, saves adapter
+adapter = train_dir(cfg, smoke=True)  # where the adapter/checkpoints live
 
-report = evaluate(cfg, smoke=True)             # EvalReport, one loss per row
+report = evaluate(cfg, smoke=True)  # EvalReport, one loss per row
 print(report.summary())
-report.assert_finite()                         # raises NonFiniteLossError, never returns nan
+report.assert_finite()  # raises NonFiniteLossError, never returns nan
 
 answers = generate(cfg, ["Write a tcpdump command for DNS only"], adapter=adapter)
-path = export_gguf(cfg, adapter=adapter)       # Path to the quantized GGUF
+path = export_gguf(cfg, adapter=adapter)  # Path to the quantized GGUF
 ```
 
 `push` publishes a complete repository, not just weights: the merged model,

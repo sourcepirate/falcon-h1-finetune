@@ -28,17 +28,13 @@ class _FakeApi:
         self._remote = remote
 
     def create_repo(self, repo_id, repo_type="model", exist_ok=False):
-        self.created.append(
-            {"repo_id": repo_id, "repo_type": repo_type, "exist_ok": exist_ok}
-        )
+        self.created.append({"repo_id": repo_id, "repo_type": repo_type, "exist_ok": exist_ok})
 
     def upload_folder(self, repo_id=None, folder_path=None, **kwargs):
         self.folders.append({"repo_id": repo_id, "folder_path": folder_path})
 
     def upload_file(self, repo_id=None, path_or_fileobj=None, path_in_repo=None, **kwargs):
-        self.files.append(
-            {"repo_id": repo_id, "local": path_or_fileobj, "remote": path_in_repo}
-        )
+        self.files.append({"repo_id": repo_id, "local": path_or_fileobj, "remote": path_in_repo})
 
     def list_repo_files(self, repo_id=None, repo_type="model", **kwargs):
         if self._remote is not None:
@@ -51,8 +47,9 @@ class _FakeApi:
 
 
 def _cfg(tmp_path, repo="org/falcon-h1-tiny-cyber"):
-    cfg = with_export(load_config(TINY), hf_repo=repo, merged_dir=tmp_path / "merged",
-                      gguf_dir=tmp_path / "gguf")
+    cfg = with_export(
+        load_config(TINY), hf_repo=repo, merged_dir=tmp_path / "merged", gguf_dir=tmp_path / "gguf"
+    )
     return cfg
 
 
@@ -114,12 +111,8 @@ def test_push_uploads_weights_card_and_gguf(tmp_path, monkeypatch):
 
     assert hub.push(cfg) == "org/falcon-h1-tiny-cyber"
     assert seen == {"card": True, "config": True}
-    assert fake.created == [
-        {"repo_id": "org/falcon-h1-tiny-cyber", "repo_type": "model", "exist_ok": True}
-    ]
-    assert fake.folders == [
-        {"repo_id": "org/falcon-h1-tiny-cyber", "folder_path": str(merged)}
-    ]
+    assert fake.created == [{"repo_id": "org/falcon-h1-tiny-cyber", "repo_type": "model", "exist_ok": True}]
+    assert fake.folders == [{"repo_id": "org/falcon-h1-tiny-cyber", "folder_path": str(merged)}]
     assert fake.files == [
         {
             "repo_id": "org/falcon-h1-tiny-cyber",
@@ -165,9 +158,7 @@ def test_push_from_hub_repairs_without_weights_upload(tmp_path, monkeypatch):
     downloaded: dict[str, object] = {}
 
     def _snapshot(repo_id=None, local_dir=None, ignore_patterns=None):
-        downloaded.update(
-            {"repo_id": repo_id, "local_dir": local_dir, "ignore": ignore_patterns}
-        )
+        downloaded.update({"repo_id": repo_id, "local_dir": local_dir, "ignore": ignore_patterns})
         Path(local_dir, "config.json").write_text("{}", encoding="utf-8")
         Path(local_dir, "model.safetensors").write_bytes(b"w")
         return str(local_dir)
@@ -281,9 +272,7 @@ def test_train_gate_failure_blocks_push(tmp_path, monkeypatch):
 
     cfg = _cfg(tmp_path)
     order: list[str] = []
-    train_mod = _setup_train(
-        monkeypatch, cfg, order=order, gate_error=DegenerateOutputError("collapsed")
-    )
+    train_mod = _setup_train(monkeypatch, cfg, order=order, gate_error=DegenerateOutputError("collapsed"))
     with pytest.raises(DegenerateOutputError, match="collapsed"):
         train_mod.train(cfg, smoke=False)
     assert order == ["gate"]

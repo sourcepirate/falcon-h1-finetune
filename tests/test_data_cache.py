@@ -64,10 +64,12 @@ def test_manifest_wiring(tmp_path, monkeypatch):
     import cyberft.loaders as data
 
     monkeypatch.setattr(data, "_resolved_revisions", lambda cfg: {})
-    splits = DatasetDict({
-        "train": Dataset.from_dict({"input_ids": [[1, 2, 3], [4, 5]]}),
-        "eval": Dataset.from_dict({"input_ids": [[1, 2]]}),
-    })
+    splits = DatasetDict(
+        {
+            "train": Dataset.from_dict({"input_ids": [[1, 2, 3], [4, 5]]}),
+            "eval": Dataset.from_dict({"input_ids": [[1, 2]]}),
+        }
+    )
 
     cfg = make_cfg(tmp_path)
     report = data.manifest(cfg, splits, smoke=False)
@@ -83,8 +85,9 @@ def test_content_hash_distinguishes_equal_length_corpora():
     from cyberft.loaders import content_hash
 
     def splits(ids):
-        return DatasetDict({"train": Dataset.from_dict({"input_ids": ids}),
-                            "eval": Dataset.from_dict({"input_ids": []})})
+        return DatasetDict(
+            {"train": Dataset.from_dict({"input_ids": ids}), "eval": Dataset.from_dict({"input_ids": []})}
+        )
 
     assert content_hash(splits([[1, 2, 3]])) != content_hash(splits([[1, 2, 4]]))
 

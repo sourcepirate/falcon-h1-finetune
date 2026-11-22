@@ -40,8 +40,9 @@ def third_party_imports() -> set[str]:
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 names.add(node.module.split(".")[0])
     stdlib = sys.stdlib_module_names
-    return {DISTRIBUTIONS.get(name, name).lower() for name in names
-            if name not in stdlib and name != "cyberft"}
+    return {
+        DISTRIBUTIONS.get(name, name).lower() for name in names if name not in stdlib and name != "cyberft"
+    }
 
 
 def test_all_runtime_imports_are_declared():

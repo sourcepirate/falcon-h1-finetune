@@ -9,11 +9,14 @@ from cyberft.evaluate import EvalReport, RowLoss
 
 
 def make_report() -> EvalReport:
-    return EvalReport("eval", [
-        RowLoss(0, 10, 1.0, "first"),
-        RowLoss(1, 20, 3.0, "worst"),
-        RowLoss(2, 30, float("nan"), "broken"),
-    ])
+    return EvalReport(
+        "eval",
+        [
+            RowLoss(0, 10, 1.0, "first"),
+            RowLoss(1, 20, 3.0, "worst"),
+            RowLoss(2, 30, float("nan"), "broken"),
+        ],
+    )
 
 
 def test_mean_and_median_ignore_non_finite():

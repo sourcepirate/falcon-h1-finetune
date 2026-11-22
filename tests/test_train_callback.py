@@ -57,9 +57,7 @@ def test_metrics_callback_maps_trainer_keys():
     tracker = _Tracker()
     cb = MetricsCallback(tracker, total_steps=100)
     cb.on_log(None, _State(), None, logs={"loss": 1.25, "learning_rate": 2e-4, "epoch": 0.5})
-    assert tracker.logged == [
-        ({"train/loss": 1.25, "train/lr": 2e-4, "train/epoch": 0.5}, 7)
-    ]
+    assert tracker.logged == [({"train/loss": 1.25, "train/lr": 2e-4, "train/epoch": 0.5}, 7)]
 
 
 def test_metrics_callback_drops_non_finite_before_logging():

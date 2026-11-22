@@ -48,8 +48,9 @@ def _clean(value: object, max_chars: int) -> str:
     return text[:max_chars] if len(text) > max_chars else text
 
 
-def _messages(user: str, assistant: str, max_chars: int, *,
-               min_chars: int = MIN_ASSISTANT_CHARS) -> list[dict] | None:
+def _messages(
+    user: str, assistant: str, max_chars: int, *, min_chars: int = MIN_ASSISTANT_CHARS
+) -> list[dict] | None:
     user, assistant = _clean(user, max_chars), _clean(assistant, max_chars)
     if len(user) < 3 or len(assistant) < min_chars:
         return None
@@ -70,8 +71,7 @@ class LoaderBase:
             raise TypeError(f"{type(self).__name__} must set DATASET_NAME")
         if spec.name != self.DATASET_NAME:
             raise ConfigError(
-                f"{type(self).__name__} handles source {self.DATASET_NAME!r}, "
-                f"got SourceConfig {spec.name!r}"
+                f"{type(self).__name__} handles source {self.DATASET_NAME!r}, got SourceConfig {spec.name!r}"
             )
         self.spec = spec
         self.max_chars = max_chars
@@ -96,7 +96,9 @@ class LoaderBase:
         spec = self.spec
         if spec.parquet:
             local = hf_hub_download(
-                repo_id=spec.repo, filename=spec.parquet, repo_type="dataset",
+                repo_id=spec.repo,
+                filename=spec.parquet,
+                repo_type="dataset",
                 revision=spec.revision or "main",
             )
             return load_dataset("parquet", data_files=local, split="train")
@@ -121,9 +123,9 @@ class RedTeamLoader(LoaderBase):
         instruction = _clean(row.get("instruction"), self.max_chars)
         extra = _clean(row.get("input"), self.max_chars)
         out = _clean(row.get("output"), self.max_chars)
-        if not out or (extra and extra == out):           # echo rows
+        if not out or (extra and extra == out):  # echo rows
             return None
-        if out[:1] in "[{" and out[-1:] in "]}":          # bare JSON dumps
+        if out[:1] in "[{" and out[-1:] in "]}":  # bare JSON dumps
             return None
         user = f"{instruction}\n\n{extra}".strip() if extra else instruction
         return _messages(user, out, self.max_chars)
@@ -195,8 +197,12 @@ class LinuxCommandsLoader(LoaderBase):
         if not invocation or not command:
             return None
         # Commands are legitimately short ("ls -la"), so do not apply the prose minimum.
-        return _messages(f"Write the Linux shell command for this task:\n{invocation}", command,
-                         self.max_chars, min_chars=1)
+        return _messages(
+            f"Write the Linux shell command for this task:\n{invocation}",
+            command,
+            self.max_chars,
+            min_chars=1,
+        )
 
 
 class DebianLoader(LoaderBase):
@@ -224,9 +230,7 @@ def get_loader(name: str) -> type[LoaderBase]:
     try:
         return LOADERS[name]
     except KeyError:
-        raise ConfigError(
-            f"data.sources has no loader for: {name!r} (known: {sorted(LOADERS)})"
-        ) from None
+        raise ConfigError(f"data.sources has no loader for: {name!r} (known: {sorted(LOADERS)})") from None
 
 
 def build_messages(cfg: Config) -> Dataset:
@@ -236,7 +240,7 @@ def build_messages(cfg: Config) -> Dataset:
     if missing := set(LOADERS) - configured:
         raise ConfigError(f"data.sources is missing dataset(s): {sorted(missing)}")
 
-    max_chars = cfg.data.max_len * 4          # cheap guard; one source row is ~9.7M chars
+    max_chars = cfg.data.max_len * 4  # cheap guard; one source row is ~9.7M chars
     parts = [
         get_loader(source.name)(source, max_chars=max_chars, seed=cfg.data.seed).load()
         for source in cfg.data.sources
@@ -286,7 +290,8 @@ class RenderSplitPipeline:
 
     def render_row(self, example: dict) -> dict:
         text = self.tokenizer.apply_chat_template(
-            example["messages"], tokenize=False, add_generation_prompt=False)
+            example["messages"], tokenize=False, add_generation_prompt=False
+        )
         if not text.endswith(self.tokenizer.eos_token):
             text += self.tokenizer.eos_token
         return {"text": text}
@@ -295,8 +300,7 @@ class RenderSplitPipeline:
         return {"input_ids": self.tokenizer(example["text"], add_special_tokens=False)["input_ids"]}
 
     def _run_render(self) -> None:
-        self.dataset = self.dataset.map(
-            self.render_row, remove_columns=["messages"], desc="chat template")
+        self.dataset = self.dataset.map(self.render_row, remove_columns=["messages"], desc="chat template")
 
     def _run_dedupe(self) -> None:
         seen: set[str] = set()
@@ -314,7 +318,7 @@ class RenderSplitPipeline:
         keep_idx: list[int] = []
         self.lengths = []
         for start in range(0, len(texts), 1000):
-            batch = texts[start:start + 1000]
+            batch = texts[start : start + 1000]
             encoded = self.tokenizer(batch, add_special_tokens=False)["input_ids"]
             for offset, ids in enumerate(encoded):
                 if len(ids) <= self.cfg.data.max_len:
@@ -326,19 +330,21 @@ class RenderSplitPipeline:
     def _run_split(self) -> None:
         # Eval is drawn only from rows that fit eval_max_len: evaluation runs without
         # loss scaling, and one overflowing long sample poisons the whole number.
-        eval_pos = [i for i, n in enumerate(self.lengths)
-                    if n <= self.cfg.data.eval_max_len][:self.eval_size]
+        eval_pos = [i for i, n in enumerate(self.lengths) if n <= self.cfg.data.eval_max_len][
+            : self.eval_size
+        ]
         eval_set = set(eval_pos)
         self._eval = self.dataset.select(eval_pos)
-        self._train = self.dataset.select(
-            [i for i in range(len(self.dataset)) if i not in eval_set])
+        self._train = self.dataset.select([i for i in range(len(self.dataset)) if i not in eval_set])
 
     def _run_tokenize(self) -> None:
         assert self._train is not None and self._eval is not None, "split stage did not run"
-        self.splits = DatasetDict({
-            "train": self._train.map(self.tokenize_row, desc="tokenize train"),
-            "eval": self._eval.map(self.tokenize_row, desc="tokenize eval"),
-        })
+        self.splits = DatasetDict(
+            {
+                "train": self._train.map(self.tokenize_row, desc="tokenize train"),
+                "eval": self._eval.map(self.tokenize_row, desc="tokenize eval"),
+            }
+        )
 
 
 def render_and_split(cfg: Config, tokenizer, dataset: Dataset, *, eval_size: int) -> DatasetDict:
@@ -389,10 +395,7 @@ def _resolved_revisions(cfg: Config) -> dict[str, str]:
     unresolved revision and pretend the corpus is fingerprinted.
     """
     api = HfApi()
-    return {
-        source.name: api.dataset_info(source.repo).sha or "unknown"
-        for source in cfg.data.sources
-    }
+    return {source.name: api.dataset_info(source.repo).sha or "unknown" for source in cfg.data.sources}
 
 
 def _percentile(sorted_lengths: list[int], q: float) -> int:
@@ -411,13 +414,11 @@ def manifest(cfg: Config, splits: DatasetDict, *, smoke: bool) -> dict:
         "max_len": cfg.data.max_len,
         "eval_max_len": cfg.data.eval_max_len,
         "rows": {split: len(splits[split]) for split in splits},
-        "tokens": {"p50": _percentile(lengths, 0.50),
-                   "p90": _percentile(lengths, 0.90), "max": lengths[-1]},
+        "tokens": {"p50": _percentile(lengths, 0.50), "p90": _percentile(lengths, 0.90), "max": lengths[-1]},
     }
 
 
-def prepare_data(cfg: Config, *, smoke: bool = False, force: bool = False,
-                 tokenizer=None) -> DatasetDict:
+def prepare_data(cfg: Config, *, smoke: bool = False, force: bool = False, tokenizer=None) -> DatasetDict:
     """Return the tokenised corpus, building it on first use.
 
     Cached under ``data.output_dir/{full,smoke}``. ``force=True`` rebuilds from source;
@@ -442,7 +443,7 @@ def prepare_data(cfg: Config, *, smoke: bool = False, force: bool = False,
 
     tokenizer = tokenizer or build_tokenizer(cfg)
     splits = build(cfg, tokenizer, smoke=smoke)
-    shutil.rmtree(out, ignore_errors=True)     # save_to_disk does not clear stale shards
+    shutil.rmtree(out, ignore_errors=True)  # save_to_disk does not clear stale shards
     splits.save_to_disk(str(out))
     (out / "manifest.json").write_text(
         json.dumps(manifest(cfg, splits, smoke=smoke), indent=2), encoding="utf-8"
