@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 import torch
 from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
@@ -102,9 +102,12 @@ def _load_plain(cfg: Config, dtype: torch.dtype) -> PreTrainedModel:
     }
     if torch.cuda.is_available():
         kwargs["device_map"] = {"": 0}
-    model = AutoModelForCausalLM.from_pretrained(cfg.model.id, **kwargs)
+    model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(cfg.model.id, **kwargs)
     if "device_map" not in kwargs:
-        model = model.to(resolve_device())
+        # .to() moves params in place; cast because the Module.to overload
+        # wrapper expects torch._C.device, which torch.device is not
+        # assignable to in the installed stubs.
+        cast(Any, model).to(resolve_device())
     return model
 
 
